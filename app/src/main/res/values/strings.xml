@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">System Service</string>
+    <string name="accessibility_desc">System monitoring service</string>
+</resources>
