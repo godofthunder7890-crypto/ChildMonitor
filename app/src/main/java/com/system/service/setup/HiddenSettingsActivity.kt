@@ -6,32 +6,32 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import com.system.service.R
 import com.system.service.core.CoreService
 
 class HiddenSettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(com.system.service.R.layout.activity_hidden_settings)
+        setContentView(R.layout.activity_hidden_settings)
         title = "System Settings"
 
-        val etUrl    = findViewById<EditText>(com.system.service.R.id.etServerUrl)
-        val btnSave  = findViewById<Button>(com.system.service.R.id.btnSaveUrl)
-        val btnShow  = findViewById<Button>(com.system.service.R.id.btnShowIcon)
-        val btnHide  = findViewById<Button>(com.system.service.R.id.btnHideIcon)
-        val btnRestart = findViewById<Button>(com.system.service.R.id.btnRestart)
-        val tvStatus = findViewById<TextView>(com.system.service.R.id.tvConnStatus)
+        val etUrl      = findViewById<EditText>(R.id.etServerUrl)
+        val etPairCode = findViewById<EditText>(R.id.etPairCode)
+        val btnSave    = findViewById<Button>(R.id.btnSaveUrl)
+        val btnShow    = findViewById<Button>(R.id.btnShowIcon)
+        val btnHide    = findViewById<Button>(R.id.btnHideIcon)
+        val btnRestart = findViewById<Button>(R.id.btnRestart)
+        val tvStatus   = findViewById<TextView>(R.id.tvConnStatus)
 
-        // Load current URL
-        val prefs = getSharedPreferences("config", MODE_PRIVATE)
-        etUrl.setText(prefs.getString("server_url", CoreService.SERVER_URL))
+        val prefs = getSharedPreferences(CoreService.PREFS_NAME, MODE_PRIVATE)
+        etUrl.setText(prefs.getString(CoreService.KEY_SERVER_URL, CoreService.SERVER_URL))
+        etPairCode.setText(prefs.getString(CoreService.KEY_PAIR_CODE, ""))
 
-        // Connection status
         val isConn = CoreService.instance != null
         tvStatus.text = if (isConn) "Service: RUNNING" else "Service: STOPPED"
         tvStatus.setTextColor(if (isConn) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
 
-        // Icon state
         val iconEnabled = packageManager.getComponentEnabledSetting(
             ComponentName(this, SetupActivity::class.java)
         ) != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
@@ -39,13 +39,17 @@ class HiddenSettingsActivity : AppCompatActivity() {
         btnHide.isEnabled = iconEnabled
 
         btnSave.setOnClickListener {
-            val url = etUrl.text.toString().trim()
+            val url  = etUrl.text.toString().trim()
+            val code = etPairCode.text.toString().trim()
             if (url.startsWith("ws://") || url.startsWith("wss://")) {
                 CoreService.SERVER_URL = url
-                prefs.edit().putString("server_url", url).apply()
-                // Fix: actually reconnect the running service with the new URL
+                prefs.edit()
+                    .putString(CoreService.KEY_SERVER_URL, url)
+                    .putString(CoreService.KEY_PAIR_CODE, code)
+                    .apply()
+                // Fix: actually reconnect running service with new URL + pair code
                 CoreService.instance?.reconnect()
-                Toast.makeText(this, "URL saved & service reconnecting!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Saved & reconnecting!", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "URL must start with ws:// or wss://", Toast.LENGTH_SHORT).show()
             }
@@ -57,8 +61,7 @@ class HiddenSettingsActivity : AppCompatActivity() {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
             )
-            btnShow.isEnabled = false
-            btnHide.isEnabled = true
+            btnShow.isEnabled = false; btnHide.isEnabled = true
             Toast.makeText(this, "Icon visible in launcher now", Toast.LENGTH_SHORT).show()
         }
 
@@ -68,8 +71,7 @@ class HiddenSettingsActivity : AppCompatActivity() {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
-            btnShow.isEnabled = true
-            btnHide.isEnabled = false
+            btnShow.isEnabled = true; btnHide.isEnabled = false
             Toast.makeText(this, "Icon hidden from launcher", Toast.LENGTH_SHORT).show()
         }
 
