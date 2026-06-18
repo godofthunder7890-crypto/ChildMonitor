@@ -43,6 +43,8 @@ class HiddenSettingsActivity : AppCompatActivity() {
             if (url.startsWith("ws://") || url.startsWith("wss://")) {
                 CoreService.SERVER_URL = url
                 prefs.edit().putString("server_url", url).apply()
+                // Fix: actually reconnect the running service with the new URL
+                CoreService.instance?.reconnect()
                 Toast.makeText(this, "URL saved & service reconnecting!", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "URL must start with ws:// or wss://", Toast.LENGTH_SHORT).show()
