@@ -15,7 +15,7 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        var SERVER_URL = "wss://bhai-secret--bs5129628.replit.app/api/ws"
+        var SERVER_URL = "wss://c0b5e039-168b-46da-a792-fd7b2480c8bb-00-2j16cbkzr845c.pike.replit.dev/api/ws"
         const val PREFS_NAME     = "config"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_PAIR_CODE  = "pair_code"
