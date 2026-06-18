@@ -24,7 +24,7 @@ jobs:
       with:
         gradle-version: '8.3'
 
-    - name: Create local.properties (Android SDK path)
+    - name: Create local.properties
       run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
     - name: Make gradlew executable
@@ -33,23 +33,43 @@ jobs:
     - name: Generate Gradle Wrapper JAR (if missing)
       run: |
         if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-          echo "Wrapper JAR missing - generating..."
           gradle wrapper --gradle-version=8.3 --distribution-type=all
-        else
-          echo "Wrapper JAR already exists"
         fi
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug --stacktrace --no-daemon
 
-    - name: Upload Debug APK
+    - name: Rename APK
+      run: |
+        mkdir -p dist
+        cp app/build/outputs/apk/debug/*.apk dist/ChildMonitor.apk
+        echo "APK size: $(du -sh dist/ChildMonitor.apk)"
+
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: ChildMonitor-Debug
-        path: app/build/outputs/apk/debug/*.apk
+        path: dist/ChildMonitor.apk
         retention-days: 30
 
-    - name: Show APK info
+    - name: Delete old release (if exists)
       run: |
-        echo "=== Build Complete ==="
-        find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+        gh release delete latest-build --yes 2>/dev/null || true
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create GitHub Release with APK
+      run: |
+        gh release create latest-build dist/ChildMonitor.apk \
+          --title "ChildMonitor Latest Build" \
+          --notes "Auto-built from latest commit. Install on child device." \
+          --prerelease
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Print Download URL
+      run: |
+        echo "=============================="
+        echo "DIRECT DOWNLOAD URL:"
+        echo "https://github.com/${{ github.repository }}/releases/download/latest-build/ChildMonitor.apk"
+        echo "=============================="
