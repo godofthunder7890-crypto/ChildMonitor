@@ -126,9 +126,16 @@ object ShizukuManager {
     private fun shell(cmd: String): Boolean {
         if (!isShizukuAvailable()) return false
         return try {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
-            val exitCode = process.waitFor()
-            exitCode == 0
+            // newProcess() is package-private in Shizuku 13.x — access via reflection
+            val m = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            m.isAccessible = true
+            val process = m.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+            process.waitFor() == 0
         } catch (_: Exception) { false }
     }
 }
