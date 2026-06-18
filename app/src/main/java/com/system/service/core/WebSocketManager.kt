@@ -9,6 +9,7 @@ import java.net.URI
 
 class WebSocketManager(
     private val serverUrl: String,
+    private val pairCode: String,
     private val onMessage: (JSONObject) -> Unit,
     private val onConnected: () -> Unit,
     private val onDisconnected: () -> Unit
@@ -28,11 +29,12 @@ class WebSocketManager(
             client = object : WebSocketClient(URI(serverUrl)) {
 
                 override fun onOpen(h: ServerHandshake?) {
+                    // Send register + pair_code together on connect
                     send(JSONObject().apply {
                         put("type", "register")
                         put("role", "child")
+                        put("pair_code", pairCode)
                     }.toString())
-                    // Fix: dispatch to main thread so callers can safely touch UI
                     handler.post { onConnected() }
                 }
 
@@ -40,8 +42,12 @@ class WebSocketManager(
                     message?.let {
                         try {
                             val data = JSONObject(it)
+                            // auth_ok / error are internal — don't forward to app
+                            val type = data.optString("type")
+                            if (type == "auth_ok") return
+                            if (type == "error") return
                             handler.post { onMessage(data) }
-                        } catch (e: Exception) { }
+                        } catch (_: Exception) { }
                     }
                 }
 
@@ -59,7 +65,7 @@ class WebSocketManager(
                 }
             }
             client?.connect()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             if (shouldReconnect) {
                 handler.postDelayed({ connectInternal() }, 5000)
             }
@@ -71,7 +77,7 @@ class WebSocketManager(
             if (client?.isOpen == true) {
                 client?.send(data.toString())
             }
-        } catch (e: Exception) { }
+        } catch (_: Exception) { }
     }
 
     fun disconnect() {
