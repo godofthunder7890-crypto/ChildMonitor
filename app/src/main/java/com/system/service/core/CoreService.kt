@@ -10,7 +10,7 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        const val SERVER_URL = "wss://YOUR_CLOUDFLARE_URL"
+        const var SERVER_URL = "wss://aged-faced-challenged-ips.trycloudflare.com"
     }
 
     lateinit var wsManager: WebSocketManager
