@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#060612"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="System Configuration"
+            android:textColor="#00E5FF"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginBottom="4dp"/>
+
+        <TextView
+            android:id="@+id/tvConnStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Service: CHECKING..."
+            android:textSize="13sp"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- SERVER URL -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SERVER URL"
+            android:textColor="#555"
+            android:textSize="10sp"
+            android:letterSpacing="0.12"
+            android:layout_marginBottom="6dp"/>
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="#1A1A35"
+            android:textColor="#EEE"
+            android:textColorHint="#333"
+            android:hint="wss://your-app.replit.app/api/ws"
+            android:padding="12dp"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:textSize="12sp"
+            android:layout_marginBottom="12dp"/>
+
+        <!-- PAIR CODE -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PAIR CODE"
+            android:textColor="#555"
+            android:textSize="10sp"
+            android:letterSpacing="0.12"
+            android:layout_marginBottom="6dp"/>
+
+        <EditText
+            android:id="@+id/etPairCode"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="#1A1A35"
+            android:textColor="#EEE"
+            android:textColorHint="#333"
+            android:hint="Secret pair code"
+            android:padding="12dp"
+            android:inputType="text"
+            android:singleLine="true"
+            android:textSize="13sp"
+            android:layout_marginBottom="16dp"/>
+
+        <Button
+            android:id="@+id/btnSaveUrl"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="Save &amp; Reconnect"
+            android:backgroundTint="#00E5FF"
+            android:textColor="#000"
+            android:fontFamily="sans-serif-bold"
+            android:layout_marginBottom="28dp"
+            android:stateListAnimator="@null"/>
+
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#1E1E3A" android:layout_marginBottom="20dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="APP ICON"
+            android:textColor="#555"
+            android:textSize="10sp"
+            android:letterSpacing="0.12"
+            android:layout_marginBottom="10dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="28dp">
+
+            <Button
+                android:id="@+id/btnShowIcon"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Show Icon"
+                android:backgroundTint="#2E7D32"
+                android:textColor="#FFF"
+                android:layout_marginEnd="8dp"
+                android:stateListAnimator="@null"/>
+
+            <Button
+                android:id="@+id/btnHideIcon"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Hide Icon"
+                android:backgroundTint="#BF360C"
+                android:textColor="#FFF"
+                android:stateListAnimator="@null"/>
+        </LinearLayout>
+
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#1E1E3A" android:layout_marginBottom="20dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SERVICE"
+            android:textColor="#555"
+            android:textSize="10sp"
+            android:letterSpacing="0.12"
+            android:layout_marginBottom="10dp"/>
+
+        <Button
+            android:id="@+id/btnRestart"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="Restart Monitoring Service"
+            android:backgroundTint="#6A1B9A"
+            android:textColor="#FFF"
+            android:stateListAnimator="@null"/>
+
+    </LinearLayout>
+</ScrollView>
