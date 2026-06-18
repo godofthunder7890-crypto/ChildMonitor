@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,7 +46,6 @@ jobs:
       run: |
         mkdir -p dist
         cp app/build/outputs/apk/debug/*.apk dist/ChildMonitor.apk
-        echo "APK size: $(du -sh dist/ChildMonitor.apk)"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
@@ -52,9 +54,8 @@ jobs:
         path: dist/ChildMonitor.apk
         retention-days: 30
 
-    - name: Delete old release (if exists)
-      run: |
-        gh release delete latest-build --yes 2>/dev/null || true
+    - name: Delete old release
+      run: gh release delete latest-build --yes 2>/dev/null || true
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -62,14 +63,7 @@ jobs:
       run: |
         gh release create latest-build dist/ChildMonitor.apk \
           --title "ChildMonitor Latest Build" \
-          --notes "Auto-built from latest commit. Install on child device." \
+          --notes "Auto-built. Install on child device." \
           --prerelease
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Print Download URL
-      run: |
-        echo "=============================="
-        echo "DIRECT DOWNLOAD URL:"
-        echo "https://github.com/${{ github.repository }}/releases/download/latest-build/ChildMonitor.apk"
-        echo "=============================="
