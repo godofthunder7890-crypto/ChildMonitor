@@ -8,6 +8,7 @@ import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import com.system.service.monitors.*
+import com.system.service.setup.ShakeDetector
 import org.json.JSONObject
 
 class CoreService : Service() {
@@ -22,6 +23,7 @@ class CoreService : Service() {
     private var wsManager: WebSocketManager? = null
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var shakeDetector: ShakeDetector? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -33,12 +35,14 @@ class CoreService : Service() {
         connectServer()
         WatchdogReceiver.schedule(this)
         MonitorWorker.enqueue(this)
+        shakeDetector = ShakeDetector(this).also { it.start() }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         instance = null
         wsManager?.disconnect()
+        shakeDetector?.stop()
         releaseWakeLock()
         WatchdogReceiver.schedule(this)
     }
