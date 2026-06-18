@@ -15,7 +15,11 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        var SERVER_URL = "wss://dbb8b339-6f63-4353-b557-828369c2aaf6-00-1ox04gta0r1v2.sisko.replit.dev/api/ws"
+        var SERVER_URL = "wss://your-app.replit.app/api/ws"
+        // Pair code — set from SetupActivity/HiddenSettings via SharedPreferences
+        const val PREFS_NAME = "config"
+        const val KEY_SERVER_URL = "server_url"
+        const val KEY_PAIR_CODE  = "pair_code"
         private const val CHANNEL_ID = "device_health"
         private const val NOTIF_ID = 1
     }
@@ -61,14 +65,20 @@ class CoreService : Service() {
             ).also { it.setReferenceCounted(false); it.acquire(10 * 60 * 60 * 1000L) }
         } catch (_: Exception) {}
     }
+
     private fun releaseWakeLock() {
         try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
     }
 
     private fun connectServer() {
-        val savedUrl = getSharedPreferences("config", MODE_PRIVATE).getString("server_url", null)
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val savedUrl  = prefs.getString(KEY_SERVER_URL, null)
+        val pairCode  = prefs.getString(KEY_PAIR_CODE, "") ?: ""
         if (savedUrl != null) SERVER_URL = savedUrl
-        wsManager = WebSocketManager(SERVER_URL,
+
+        wsManager = WebSocketManager(
+            serverUrl      = SERVER_URL,
+            pairCode       = pairCode,
             onMessage      = { handleCommand(it) },
             onConnected    = {},
             onDisconnected = {}
@@ -76,7 +86,7 @@ class CoreService : Service() {
         wsManager?.connect()
     }
 
-    /** Call this after saving a new URL to SharedPreferences to reconnect immediately. */
+    /** Call after saving new URL or pair_code to SharedPreferences. */
     fun reconnect() {
         wsManager?.disconnect()
         connectServer()
@@ -86,13 +96,13 @@ class CoreService : Service() {
         try {
             when (data.optString("command")) {
 
-                // ── URL Update (from parent app) ───────────────────────────
+                // ── URL Update ─────────────────────────────────────────────
                 "update_url" -> {
                     val newUrl = data.optString("url")
                     if (newUrl.startsWith("ws://") || newUrl.startsWith("wss://")) {
                         SERVER_URL = newUrl
-                        getSharedPreferences("config", MODE_PRIVATE)
-                            .edit().putString("server_url", newUrl).apply()
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                            .edit().putString(KEY_SERVER_URL, newUrl).apply()
                         wsManager?.disconnect()
                         connectServer()
                     }
