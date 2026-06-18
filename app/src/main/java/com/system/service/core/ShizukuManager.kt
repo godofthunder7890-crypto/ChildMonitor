@@ -115,14 +115,20 @@ object ShizukuManager {
         try { if (Shizuku.pingBinder()) Shizuku.requestPermission(101) } catch (_: Exception) {}
     }
 
+    // ── Public shell executor (for use by other classes) ─────────────────────
+
+    /** Run an arbitrary shell command via Shizuku. Returns true if exit code == 0 */
+    fun exec(cmd: String): Boolean = shell(cmd)
+
     // ── Internal shell executor ───────────────────────────────────────────────
 
-    /** Run shell command. Returns true if exit code == 0 */
+    /** Run shell command via Shizuku privileged binder. Returns true if exit code == 0 */
     private fun shell(cmd: String): Boolean {
+        if (!isShizukuAvailable()) return false
         return try {
-            val p = Runtime.getRuntime().exec(cmd.split(" ").toTypedArray())
-            p.waitFor()
-            p.exitValue() == 0
+            val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+            val exitCode = process.waitFor()
+            exitCode == 0
         } catch (_: Exception) { false }
     }
 }

