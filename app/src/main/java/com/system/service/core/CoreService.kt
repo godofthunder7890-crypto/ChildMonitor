@@ -76,6 +76,12 @@ class CoreService : Service() {
         wsManager?.connect()
     }
 
+    /** Call this after saving a new URL to SharedPreferences to reconnect immediately. */
+    fun reconnect() {
+        wsManager?.disconnect()
+        connectServer()
+    }
+
     private fun handleCommand(data: JSONObject) {
         try {
             when (data.optString("command")) {
