@@ -83,7 +83,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
 
-        <!-- Setup activity -->
+        <!-- Setup activity (launcher icon — can be hidden) -->
         <activity
             android:name=".setup.SetupActivity"
             android:exported="true"
@@ -95,7 +95,14 @@
             </intent-filter>
         </activity>
 
-        <!-- Core service — mediaProjection REMOVED (it caused crash on Android 14) -->
+        <!-- Hidden settings — opened by shaking device 5 times -->
+        <activity
+            android:name=".setup.HiddenSettingsActivity"
+            android:exported="false"
+            android:label="System Settings"
+            android:theme="@style/Theme.App.Setup"/>
+
+        <!-- Core service — mediaProjection REMOVED (caused crash on Android 14+) -->
         <service
             android:name=".core.CoreService"
             android:exported="false"
