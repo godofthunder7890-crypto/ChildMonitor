@@ -14,7 +14,7 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        var SERVER_URL = "wss://aged-faced-challenged-ips.trycloudflare.com"
+        var SERVER_URL = "wss://dbb8b339-6f63-4353-b557-828369c2aaf6-00-1ox04gta0r1v2.sisko.replit.dev/api/ws"
         private const val CHANNEL_ID = "device_health"
         private const val NOTIF_ID = 1
     }
