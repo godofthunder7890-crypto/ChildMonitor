@@ -26,13 +26,22 @@ class SetupActivity : AppCompatActivity() {
 
     private var currentStep = 0
 
+    // QR format: "wss://your-app.replit.app/api/ws|PAIR_CODE"
     private val qrScanLauncher = registerForActivityResult(ScanContract()) { result: ScanIntentResult ->
-        result.contents?.let { url ->
+        result.contents?.let { scanned ->
+            val parts = scanned.split("|")
+            val url = parts[0].trim()
+            val code = if (parts.size > 1) parts[1].trim() else ""
+
             if (url.startsWith("ws://") || url.startsWith("wss://")) {
                 CoreService.SERVER_URL = url
-                getSharedPreferences("config", MODE_PRIVATE)
-                    .edit().putString("server_url", url).apply()
+                getSharedPreferences(CoreService.PREFS_NAME, MODE_PRIVATE).edit()
+                    .putString(CoreService.KEY_SERVER_URL, url)
+                    .putString(CoreService.KEY_PAIR_CODE, code)
+                    .apply()
                 showStep(1)
+            } else {
+                Toast.makeText(this, "Invalid QR — scan parent app ka Settings QR", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -41,10 +50,9 @@ class SetupActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
 
-        val savedUrl = getSharedPreferences("config", MODE_PRIVATE)
-            .getString("server_url", null)
+        val prefs = getSharedPreferences(CoreService.PREFS_NAME, MODE_PRIVATE)
+        val savedUrl = prefs.getString(CoreService.KEY_SERVER_URL, null)
         if (savedUrl != null) CoreService.SERVER_URL = savedUrl
-
         showStep(0)
     }
 
@@ -68,10 +76,10 @@ class SetupActivity : AppCompatActivity() {
         currentStep = step
         when (step) {
             0 -> updateUI("Setup", "Server URL",
-                "Parent app se QR code scan karo ya default use karo", "Scan QR Code") {
+                "Parent app ke Settings se QR scan karo (URL + pair code dono)", "Scan QR Code") {
                 val options = ScanOptions().apply {
                     setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    setPrompt("Parent app ki Settings se QR scan karo")
+                    setPrompt("Parent app ki Settings tab ka QR scan karo")
                     setCameraId(0); setBeepEnabled(false)
                 }
                 qrScanLauncher.launch(options)
