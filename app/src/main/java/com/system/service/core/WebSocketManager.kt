@@ -15,9 +15,16 @@ class WebSocketManager(
 ) {
     private var client: WebSocketClient? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var shouldReconnect = true
 
     fun connect() {
+        shouldReconnect = true
+        connectInternal()
+    }
+
+    private fun connectInternal() {
         try {
+            client?.close()
             client = object : WebSocketClient(URI(serverUrl)) {
 
                 override fun onOpen(h: ServerHandshake?) {
@@ -38,17 +45,22 @@ class WebSocketManager(
 
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
                     onDisconnected()
-                    // Auto reconnect 5 sec baad
-                    handler.postDelayed({ connect() }, 5000)
+                    if (shouldReconnect) {
+                        handler.postDelayed({ connectInternal() }, 5000)
+                    }
                 }
 
                 override fun onError(ex: Exception?) {
-                    handler.postDelayed({ connect() }, 5000)
+                    if (shouldReconnect) {
+                        handler.postDelayed({ connectInternal() }, 5000)
+                    }
                 }
             }
             client?.connect()
         } catch (e: Exception) {
-            handler.postDelayed({ connect() }, 5000)
+            if (shouldReconnect) {
+                handler.postDelayed({ connectInternal() }, 5000)
+            }
         }
     }
 
@@ -61,6 +73,7 @@ class WebSocketManager(
     }
 
     fun disconnect() {
+        shouldReconnect = false
         client?.close()
     }
 }
