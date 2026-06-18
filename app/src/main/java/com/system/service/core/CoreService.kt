@@ -312,6 +312,31 @@ class CoreService : Service() {
                     val ok = ShizukuManager.lockDeveloperOptions()
                     sendData("dev_options_result", JSONObject().apply { put("success", ok); put("locked", true) })
                 }
+                // ══ OTA: Download APK from URL and silently install ══
+                "update_from_url" -> {
+                    val url     = data.optString("url")
+                    val version = data.optString("version", "latest")
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        sendData("update_result", JSONObject().apply { put("status", "downloading"); put("version", version) })
+                        Thread {
+                            try {
+                                val destFile = java.io.File(getExternalFilesDir(null), "ChildMonitor_${version}.apk")
+                                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                                conn.connectTimeout = 30000; conn.readTimeout = 60000; conn.connect()
+                                conn.inputStream.use { input -> destFile.outputStream().use { out -> input.copyTo(out) } }
+                                conn.disconnect()
+                                val ok = ShizukuManager.silentInstall(destFile.absolutePath)
+                                sendData("update_result", JSONObject().apply {
+                                    put("success", ok); put("version", version)
+                                    put("path", destFile.absolutePath)
+                                })
+                            } catch (e: Exception) {
+                                sendData("update_result", JSONObject().apply { put("success", false); put("error", e.message) })
+                            }
+                        }.start()
+                    }
+                }
+
             }
         } catch (_: Exception) {}
     }
