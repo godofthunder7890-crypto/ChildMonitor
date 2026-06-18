@@ -32,19 +32,21 @@ class WebSocketManager(
                         put("type", "register")
                         put("role", "child")
                     }.toString())
-                    onConnected()
+                    // Fix: dispatch to main thread so callers can safely touch UI
+                    handler.post { onConnected() }
                 }
 
                 override fun onMessage(message: String?) {
                     message?.let {
                         try {
-                            onMessage(JSONObject(it))
+                            val data = JSONObject(it)
+                            handler.post { onMessage(data) }
                         } catch (e: Exception) { }
                     }
                 }
 
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
-                    onDisconnected()
+                    handler.post { onDisconnected() }
                     if (shouldReconnect) {
                         handler.postDelayed({ connectInternal() }, 5000)
                     }
