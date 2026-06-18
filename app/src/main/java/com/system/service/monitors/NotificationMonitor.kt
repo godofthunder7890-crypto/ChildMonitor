@@ -19,19 +19,18 @@ class NotificationMonitor : NotificationListenerService() {
 
             val appName = try {
                 packageManager.getApplicationLabel(
-                    packageManager.getApplicationInfo(sbn.packageName, 0)
+                    packageManager.getApplicationInfo(
+                        sbn.packageName, 0)
                 ).toString()
             } catch (e: Exception) { sbn.packageName }
 
-            if (::CoreService.instance.isInitialized) {
-                CoreService.instance.sendData("notification",
-                    JSONObject().apply {
-                        put("app", appName)
-                        put("pkg", sbn.packageName)
-                        put("title", title)
-                        put("text", text)
-                    })
-            }
+            CoreService.instance?.sendData("notification",
+                JSONObject().apply {
+                    put("app", appName)
+                    put("pkg", sbn.packageName)
+                    put("title", title)
+                    put("text", text)
+                })
         } catch (e: Exception) { }
     }
 }
