@@ -34,7 +34,7 @@ class SetupActivity : AppCompatActivity() {
             if (currentStep < 6 && isPermissionGranted(currentStep)) {
                 showStep(currentStep + 1)
             }
-        }, 1000)
+        }, 1500)
     }
 
     private fun showStep(step: Int) {
@@ -60,7 +60,7 @@ class SetupActivity : AppCompatActivity() {
                 startActivity(i)
             }
             3 -> updateUI("4/6", "Battery Optimization",
-                "Keep service running always", "Disable") {
+                "Keep service running", "Disable") {
                 startActivity(Intent(
                     Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                     Uri.parse("package:$packageName")))
@@ -140,8 +140,16 @@ class SetupActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvStep).text = "Step $step"
         findViewById<TextView>(R.id.tvTitle).text = title
         findViewById<TextView>(R.id.tvDesc).text = desc
-        val btn = findViewById<Button>(R.id.btnAction)
-        btn.text = btnText
-        btn.setOnClickListener { action() }
+
+        // Main action button
+        val btnAction = findViewById<Button>(R.id.btnAction)
+        btnAction.text = btnText
+        btnAction.setOnClickListener { action() }
+
+        // Next button — manually aage badho
+        val btnNext = findViewById<Button>(R.id.btnNext)
+        btnNext.setOnClickListener {
+            showStep(currentStep + 1)
+        }
     }
 }
