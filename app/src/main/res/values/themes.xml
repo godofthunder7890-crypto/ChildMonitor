@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.App" parent="Theme.MaterialComponents.DayNight">
+    <style name="Theme.App"
+        parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorSecondary">@color/teal_200</item>
+        <item name="colorOnPrimary">@color/white</item>
     </style>
-
-    <color name="purple_500">#6200EE</color>
-    <color name="purple_700">#3700B3</color>
-    <color name="teal_200">#03DAC5</color>
 </resources>
