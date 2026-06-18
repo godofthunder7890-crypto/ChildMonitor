@@ -71,7 +71,10 @@ object ShizukuManager {
 
     fun requestShizukuPermission() {
         try {
-            if (!Shizuku.shouldShowRequestPermissionRationale()) {
+            // Fix: shouldShowRequestPermissionRationale() returns true when user
+            // denied once — we must still call requestPermission() in that case.
+            // Only skip if Shizuku binder isn't even running.
+            if (Shizuku.pingBinder()) {
                 Shizuku.requestPermission(101)
             }
         } catch (_: Exception) {}
