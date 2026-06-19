@@ -2,41 +2,52 @@ package com.system.service.core
 
 import android.content.Context
 import android.content.Intent
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.Worker
-import androidx.work.WorkerParameters
-import androidx.work.ExistingPeriodicWorkPolicy
+import android.os.Build
+import androidx.work.*
 import java.util.concurrent.TimeUnit
 
 class MonitorWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
 
     override fun doWork(): Result {
-        // Service chal raha hai ya nahi check karo
+        val ctx = applicationContext
+
         if (CoreService.instance == null) {
+            CrashLogger.logWatchdogRestart(ctx)
             try {
-                applicationContext.startForegroundService(
-                    Intent(applicationContext, CoreService::class.java))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ctx.startForegroundService(Intent(ctx, CoreService::class.java))
+                } else {
+                    ctx.startService(Intent(ctx, CoreService::class.java))
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
+                CrashLogger.logCrash(ctx, e, "MonitorWorker.doWork")
             }
         }
-        // Watchdog bhi refresh karo
-        WatchdogReceiver.schedule(applicationContext)
+
+        // Always refresh watchdog alarm — keeps both layers alive
+        WatchdogReceiver.schedule(ctx)
         return Result.success()
     }
 
     companion object {
+        private const val WORK_NAME = "device_health_monitor"
+
         fun enqueue(context: Context) {
-            val request = PeriodicWorkRequestBuilder<MonitorWorker>(
-                15, TimeUnit.MINUTES  // Minimum interval WorkManager allow karta hai
-            ).build()
+            // No network constraint — must run even offline
+            val request = PeriodicWorkRequestBuilder<MonitorWorker>(15, TimeUnit.MINUTES)
+                .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
+                .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                "device_health_monitor",
-                ExistingPeriodicWorkPolicy.KEEP,
+                WORK_NAME,
+                // REPLACE ensures fresh schedule — KEEP can leave stale schedule after updates
+                ExistingPeriodicWorkPolicy.REPLACE,
                 request
             )
+        }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
         }
     }
 }
