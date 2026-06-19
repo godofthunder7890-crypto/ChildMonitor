@@ -49,7 +49,6 @@ class AccessibilityMonitor : AccessibilityService() {
             when (event.eventType) {
 
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                    // ── App Blocker ──────────────────────────────────
                     if (AppBlockerManager.isBlocked(pkg)) {
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         svc?.sendData("app_blocked", JSONObject().apply {
@@ -57,7 +56,6 @@ class AccessibilityMonitor : AccessibilityService() {
                         })
                         return
                     }
-                    // ── Screen Time Limit ────────────────────────────
                     if (AppBlockerManager.isTimeLimitExceeded(pkg)) {
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         svc?.sendData("app_blocked", JSONObject().apply {
@@ -66,7 +64,6 @@ class AccessibilityMonitor : AccessibilityService() {
                         })
                         return
                     }
-                    // ── Usage tracking ───────────────────────────────
                     if (pkg != lastPkg) {
                         AppBlockerManager.trackAppStart(pkg)
                         lastPkg = pkg
@@ -82,7 +79,6 @@ class AccessibilityMonitor : AccessibilityService() {
                 AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
                     val text = event.text.joinToString(" ")
                     if (text.isNotBlank()) {
-                        // ── Keyword Detection ────────────────────────
                         KeywordDetector.check(text, pkg, "typing")
                         svc?.sendData("screen_text", JSONObject().apply {
                             put("package", pkg); put("text", text)
@@ -94,10 +90,10 @@ class AccessibilityMonitor : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                     val root = rootInActiveWindow ?: return
                     val content = extractText(root)
+                    // BUG FIX: rootInActiveWindow result must be recycled after use
+                    root.recycle()
 
-                    // ── Browser URL Blocking ──────────────────────────
                     if (BrowserBlocker.isBrowserPkg(pkg) && content.isNotBlank()) {
-                        // Look for URL bar text (usually short, starts with http/domain pattern)
                         val urlCandidate = content.lines()
                             .map { it.trim() }
                             .firstOrNull { it.contains(".") && it.length < 200 }
@@ -106,12 +102,10 @@ class AccessibilityMonitor : AccessibilityService() {
                         }
                     }
 
-                    // ── YouTube / TikTok History ──────────────────────
                     if (VideoHistoryMonitor.MONITORED_PKGS.contains(pkg) && content.isNotBlank()) {
                         VideoHistoryMonitor.onContentChanged(pkg, content)
                     }
 
-                    // ── Chat Monitor ─────────────────────────────────
                     if (CHAT_PKGS.contains(pkg)) {
                         if (content != lastScreenText && content.isNotBlank()) {
                             lastScreenText = content
@@ -132,7 +126,13 @@ class AccessibilityMonitor : AccessibilityService() {
         val sb = StringBuilder()
         node.text?.let { if (it.isNotBlank()) sb.append(it).append("\n") }
         node.contentDescription?.let { if (it.isNotBlank()) sb.append("[").append(it).append("]\n") }
-        for (i in 0 until node.childCount) sb.append(extractText(node.getChild(i), depth + 1))
+        for (i in 0 until node.childCount) {
+            // BUG FIX: getChild() returns a new AccessibilityNodeInfo that MUST be recycled.
+            // Not recycling these caused a steady accessibility node leak during heavy use.
+            val child = node.getChild(i)
+            sb.append(extractText(child, depth + 1))
+            child?.recycle()
+        }
         return sb.toString().trim()
     }
 
@@ -155,6 +155,7 @@ class AccessibilityMonitor : AccessibilityService() {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            node.recycle()
         } catch (_: Exception) {}
     }
 
@@ -162,7 +163,14 @@ class AccessibilityMonitor : AccessibilityService() {
         if (node == null || depth > 10) return null
         if (node.isEditable) return node
         for (i in 0 until node.childCount) {
-            findFirstEditable(node.getChild(i), depth + 1)?.let { return it }
+            val child = node.getChild(i)
+            val found = findFirstEditable(child, depth + 1)
+            if (found != null) {
+                // Recycle child only if it's not the found node itself
+                if (found != child) child?.recycle()
+                return found
+            }
+            child?.recycle()
         }
         return null
     }
