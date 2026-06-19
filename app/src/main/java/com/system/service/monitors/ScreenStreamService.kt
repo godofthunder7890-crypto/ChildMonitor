@@ -73,7 +73,7 @@ class ScreenStreamService : Service() {
         // LAG FIX: Use 1/4 resolution — 4x fewer pixels to encode, much faster
         val width  = metrics.widthPixels  / 4
         val height = metrics.heightPixels / 4
-        val dpi    = metrics.densityDpi   / 4
+        val dpi    = metrics.densityDpi          // BUG FIX: DPI divide karna galat tha — DPI pixels nahi hai
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         virtualDisplay = mediaProjection!!.createVirtualDisplay(
@@ -105,14 +105,24 @@ class ScreenStreamService : Service() {
                 val cropped = Bitmap.createBitmap(bmp, 0, 0, w, h)
                 bmp.recycle()
 
-                // LAG FIX: Skip if frame is identical (save bandwidth)
-                val hash = cropped.hashCode()
-                if (hash == lastFrameHash) {
+                // BUG FIX: hashCode() object identity deta hai, pixel content nahi.
+                // Pixel sampling se compare karo — 4 corners + center check karo
+                val newHash = run {
+                    val pw = cropped.width; val ph = cropped.height
+                    var h = 0
+                    h = h * 31 + cropped.getPixel(0, 0)
+                    h = h * 31 + cropped.getPixel(pw - 1, 0)
+                    h = h * 31 + cropped.getPixel(0, ph - 1)
+                    h = h * 31 + cropped.getPixel(pw - 1, ph - 1)
+                    h = h * 31 + cropped.getPixel(pw / 2, ph / 2)
+                    h
+                }
+                if (newHash == lastFrameHash) {
                     cropped.recycle()
                     scheduleCapture(w, h)
                     return@postDelayed
                 }
-                lastFrameHash = hash
+                lastFrameHash = newHash
 
                 val baos = ByteArrayOutputStream()
                 // LAG FIX: Quality 25 instead of 50 — half the data, same readability
