@@ -86,6 +86,7 @@ class CoreService : Service() {
         super.onDestroy()
         instance = null
         wsManager?.disconnect()
+        stopPeriodicSending()
         shakeDetector?.stop()
         GeofenceMonitor.stopTracking()
         InternetScheduler.disable()
@@ -118,7 +119,33 @@ class CoreService : Service() {
         try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
     }
 
-    private fun connectServer() {
+    // ── Periodic auto-send (runs every 30s while parent is connected) ─────────
+    private var periodicRunnable: Runnable? = null
+    private var periodicTick = 0
+
+    private fun startPeriodicSending() {
+        stopPeriodicSending()
+        periodicRunnable = object : Runnable {
+            override fun run() {
+                periodicTick++
+                sendBattery()
+                sendCurrentApp()
+                if (periodicTick % 4 == 0)  sendLocation()            // every 2 min
+                if (periodicTick % 10 == 0) { sendCallLog(50); sendSms(50) }  // every 5 min
+                if (periodicTick % 20 == 0) { sendAppUsage(24); sendGallery(20) } // every 10 min
+                mainHandler.postDelayed(this, 30_000)
+            }
+        }
+        mainHandler.postDelayed(periodicRunnable!!, 30_000)
+    }
+
+    private fun stopPeriodicSending() {
+        periodicRunnable?.let { mainHandler.removeCallbacks(it) }
+        periodicRunnable = null
+        periodicTick = 0
+    }
+
+        private fun connectServer() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val savedUrl = prefs.getString(KEY_SERVER_URL, null)
         val pairCode = prefs.getString(KEY_PAIR_CODE, "") ?: ""
@@ -136,8 +163,22 @@ class CoreService : Service() {
                     put("keywords",          JSONArray(KeywordDetector.getKeywords()))
                     put("blocked_domains",   JSONArray(BrowserBlocker.getBlockedDomains()))
                 })
+                // AUTO-SEND all data immediately when parent connects
+                mainHandler.postDelayed({
+                    sendBattery()
+                    sendLocation()
+                    sendCurrentApp()
+                    sendCallLog(50)
+                    sendSms(50)
+                    sendAppUsage(24)
+                    sendGallery(20)
+                    startPeriodicSending()
+                }, 1000)
             },
-            onDisconnected = { OfflineAlertManager.onDisconnected() }
+            onDisconnected = {
+                OfflineAlertManager.onDisconnected()
+                stopPeriodicSending()
+            }
         )
         wsManager?.connect()
     }
