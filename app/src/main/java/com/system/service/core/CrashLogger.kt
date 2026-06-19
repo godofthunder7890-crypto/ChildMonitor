@@ -10,17 +10,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Crash & Restart Logger — Professional level diagnostic system.
- *
- * Tracks:
- * - Unhandled exceptions (crash stack traces)
- * - Watchdog-triggered restarts (service was dead)
- * - Service stop events (onDestroy)
- *
- * All logs are written to internal storage so they survive process death.
- * On next CoreService start, logs are sent to parent via WebSocket.
- */
 object CrashLogger {
 
     private const val CRASH_FILE   = "crash_log.json"
@@ -29,26 +18,19 @@ object CrashLogger {
 
     private val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
-    // ── Install global uncaught exception handler ──────────────────────────────
     fun install(context: Context) {
         val appCtx = context.applicationContext
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                logCrash(appCtx, throwable, thread.name)
-            } catch (_: Exception) {}
-
-            // Let Android's default handler run (shows crash dialog, creates tombstone)
+            try { logCrash(appCtx, throwable, thread.name) } catch (_: Exception) {}
             defaultHandler?.uncaughtException(thread, throwable)
         }
     }
 
-    // ── Log an unhandled crash ─────────────────────────────────────────────────
     fun logCrash(context: Context, throwable: Throwable, threadName: String = "unknown") {
         try {
             val sw = StringWriter(); throwable.printStackTrace(PrintWriter(sw))
-            val entry = JSONObject().apply {
+            appendEntry(context, CRASH_FILE, JSONObject().apply {
                 put("time",       sdf.format(Date()))
                 put("timestamp",  System.currentTimeMillis())
                 put("type",       "CRASH")
@@ -56,53 +38,80 @@ object CrashLogger {
                 put("exception",  throwable.javaClass.name)
                 put("message",    throwable.message ?: "no message")
                 put("stacktrace", sw.toString().take(2000))
-            }
-            appendEntry(context, CRASH_FILE, entry)
+            })
         } catch (_: Exception) {}
     }
 
-    // ── Log a watchdog restart (service was dead when watchdog fired) ──────────
     fun logWatchdogRestart(context: Context) {
         try {
-            val entry = JSONObject().apply {
+            appendEntry(context, RESTART_FILE, JSONObject().apply {
                 put("time",      sdf.format(Date()))
                 put("timestamp", System.currentTimeMillis())
                 put("type",      "WATCHDOG_RESTART")
                 put("message",   "Service was dead — watchdog restarted it")
-            }
-            appendEntry(context, RESTART_FILE, entry)
+            })
         } catch (_: Exception) {}
     }
 
-    // ── Log graceful service stop ──────────────────────────────────────────────
     fun logServiceStop(context: Context, reason: String) {
         try {
-            val entry = JSONObject().apply {
+            appendEntry(context, RESTART_FILE, JSONObject().apply {
                 put("time",      sdf.format(Date()))
                 put("timestamp", System.currentTimeMillis())
                 put("type",      "SERVICE_STOP")
                 put("reason",    reason)
-            }
-            appendEntry(context, RESTART_FILE, entry)
+                put("message",   reason)
+            })
         } catch (_: Exception) {}
     }
 
-    // ── Log service start ──────────────────────────────────────────────────────
     fun logServiceStart(context: Context, reason: String = "normal") {
         try {
-            val entry = JSONObject().apply {
+            appendEntry(context, RESTART_FILE, JSONObject().apply {
                 put("time",      sdf.format(Date()))
                 put("timestamp", System.currentTimeMillis())
                 put("type",      "SERVICE_START")
                 put("reason",    reason)
                 put("android",   android.os.Build.VERSION.SDK_INT)
                 put("device",    "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-            }
-            appendEntry(context, RESTART_FILE, entry)
+            })
         } catch (_: Exception) {}
     }
 
-    // ── Read all logs and format as JSON for sending to parent ─────────────────
+    // ── Accessors for HealthReporter ───────────────────────────────────────────
+
+    fun getCrashCount(context: Context): Int =
+        try { readEntries(context, CRASH_FILE).length() } catch (_: Exception) { 0 }
+
+    fun getRestartCount(context: Context): Int {
+        return try {
+            val arr = readEntries(context, RESTART_FILE)
+            (0 until arr.length()).count {
+                arr.getJSONObject(it).optString("type") == "WATCHDOG_RESTART"
+            }
+        } catch (_: Exception) { 0 }
+    }
+
+    fun getLastCrash(context: Context): JSONObject? {
+        return try {
+            val arr = readEntries(context, CRASH_FILE)
+            if (arr.length() > 0) arr.getJSONObject(arr.length() - 1) else null
+        } catch (_: Exception) { null }
+    }
+
+    fun getLastRestart(context: Context): JSONObject? {
+        return try {
+            val arr = readEntries(context, RESTART_FILE)
+            // Find last WATCHDOG_RESTART entry
+            var last: JSONObject? = null
+            for (i in 0 until arr.length()) {
+                val e = arr.getJSONObject(i)
+                if (e.optString("type") == "WATCHDOG_RESTART") last = e
+            }
+            last
+        } catch (_: Exception) { null }
+    }
+
     fun buildDiagnosticReport(context: Context): JSONObject {
         return JSONObject().apply {
             put("crashes",  readEntries(context, CRASH_FILE))
@@ -114,27 +123,21 @@ object CrashLogger {
         }
     }
 
-    // ── Clear all logs ─────────────────────────────────────────────────────────
     fun clearAll(context: Context) {
         try { getFile(context, CRASH_FILE).delete() } catch (_: Exception) {}
         try { getFile(context, RESTART_FILE).delete() } catch (_: Exception) {}
     }
 
-    // ── Has unsent crash data ──────────────────────────────────────────────────
-    fun hasCrashData(context: Context): Boolean {
-        return try { getFile(context, CRASH_FILE).exists() } catch (_: Exception) { false }
-    }
+    fun hasCrashData(context: Context): Boolean =
+        try { getFile(context, CRASH_FILE).exists() } catch (_: Exception) { false }
 
-    // ── Internal helpers ───────────────────────────────────────────────────────
     private fun appendEntry(context: Context, filename: String, entry: JSONObject) {
-        val file = getFile(context, filename)
         val arr = readEntries(context, filename)
         arr.put(entry)
-        // Keep only latest MAX_ENTRIES to avoid unbounded growth
         val trimmed = JSONArray()
         val start = maxOf(0, arr.length() - MAX_ENTRIES)
         for (i in start until arr.length()) trimmed.put(arr.getJSONObject(i))
-        file.writeText(trimmed.toString())
+        getFile(context, filename).writeText(trimmed.toString())
     }
 
     private fun readEntries(context: Context, filename: String): JSONArray {
@@ -144,7 +147,6 @@ object CrashLogger {
         } catch (_: Exception) { JSONArray() }
     }
 
-    private fun getFile(context: Context, filename: String): File {
-        return File(context.filesDir, filename)
-    }
+    private fun getFile(context: Context, filename: String): File =
+        File(context.filesDir, filename)
 }
