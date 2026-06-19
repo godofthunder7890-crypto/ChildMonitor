@@ -71,17 +71,21 @@ object GalleryManager {
 
     fun getFullPhoto(context: Context, path: String): String? {
         return try {
-            // path is a content:// URI string
+            // BUG FIX: Old code loaded full file into ByteArray (readBytes) before inSampleSize decode
+            // = potential 15-20MB OOM for high-res photos. Now uses two-stream approach:
+            // Pass 1: measure dimensions (no pixel data loaded)
+            // Pass 2: decode with inSampleSize (only reads 1/N of pixel data)
             val uri = android.net.Uri.parse(path)
-            val stream = context.contentResolver.openInputStream(uri) ?: return null
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            val tempBytes = stream.readBytes()
-            BitmapFactory.decodeByteArray(tempBytes, 0, tempBytes.size, opts)
+            context.contentResolver.openInputStream(uri)?.use { s ->
+                BitmapFactory.decodeStream(s, null, opts)
+            }
             val maxDim = maxOf(opts.outWidth, opts.outHeight)
             val scale = if (maxDim > 1080) maxDim / 1080 else 1
-            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = scale }
-            val bmp = BitmapFactory.decodeByteArray(tempBytes, 0, tempBytes.size, decodeOpts)
-                ?: return null
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = maxOf(1, scale) }
+            val bmp = context.contentResolver.openInputStream(uri)?.use { s ->
+                BitmapFactory.decodeStream(s, null, decodeOpts)
+            } ?: return null
             val baos = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.JPEG, 75, baos)
             bmp.recycle()
