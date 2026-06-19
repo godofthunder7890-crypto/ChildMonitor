@@ -55,7 +55,8 @@ class AudioStreamService : Service() {
                             put("sampleRate", sampleRate)
                         })
                     }
-                    Thread.sleep(200)
+                    // BUG FIX: Thread.sleep(200) hata diya — recorder.read() already blocking hai.
+                    // Sleep se audio buffer overflow hota tha aur data drop hota tha.
                 }
             } catch (_: Exception) {
             } finally {
