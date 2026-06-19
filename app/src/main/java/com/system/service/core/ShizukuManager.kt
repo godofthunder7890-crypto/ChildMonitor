@@ -90,12 +90,20 @@ object ShizukuManager {
 
     fun exec(cmd: String): Boolean = shell(cmd)
 
-    // FIX: Reflection hata diya — Android 16 hidden API blocking karta hai
-    // Ab Shizuku.newProcess() direct public API use karta hai (Shizuku 12+ se available)
+    // Reflection used because Shizuku.newProcess() is not in the public API stubs
+    // (it's implemented via IPC at runtime). Android 16 hidden-API policy does NOT
+    // apply to third-party libraries, so reflection here is safe on all API levels.
     private fun shell(cmd: String): Boolean {
         if (!isShizukuAvailable()) return false
         return try {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+            val m = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            m.isAccessible = true
+            val process = m.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
             process.waitFor() == 0
         } catch (_: Exception) { false }
     }
