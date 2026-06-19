@@ -61,8 +61,8 @@ class CoreService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        // Android 14+ (API 34) bans startForegroundService from onTaskRemoved — WatchdogReceiver handles restart via AlarmManager
         WatchdogReceiver.schedule(this)
-        try { startForegroundService(Intent(this, CoreService::class.java)) } catch (_: Exception) {}
     }
 
     private fun acquireWakeLock() {
