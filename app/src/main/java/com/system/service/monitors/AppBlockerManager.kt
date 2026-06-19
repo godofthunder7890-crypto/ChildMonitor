@@ -4,73 +4,94 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 
 object AppBlockerManager {
 
-    private const val PREFS = "app_blocker"
+    private const val PREFS      = "app_blocker"
     private const val KEY_BLOCKED = "blocked_apps"
     private const val KEY_LIMITS  = "screen_time_limits"
     private const val KEY_USAGE   = "today_usage"
     private const val KEY_DATE    = "usage_date"
+    private const val KEY_LAST_PKG   = "last_pkg"
+    private const val KEY_LAST_START = "last_start"
 
-    // Cached sets for fast O(1) lookup in AccessibilityMonitor
-    private val blockedApps = mutableSetOf<String>()
-    // pkg -> limit in minutes
-    private val timeLimits  = mutableMapOf<String, Int>()
-    // pkg -> minutes used today
-    private val todayUsage  = mutableMapOf<String, Long>()
+    // BUG FIX: Use thread-safe collections — AccessibilityService thread + CoreService thread
+    // both read/write these simultaneously. ConcurrentModificationException was possible.
+    private val blockedApps = CopyOnWriteArraySet<String>()
+    private val timeLimits  = ConcurrentHashMap<String, Int>()
+    private val todayUsage  = ConcurrentHashMap<String, Long>()
 
-    private var lastUsagePkg = ""
+    private var lastUsagePkg   = ""
     private var lastUsageStart = 0L
+
+    // BUG FIX: Prevent double-init from CoreService.onCreate() + AccessibilityMonitor.onServiceConnected()
+    @Volatile private var initialized = false
     private var prefs: SharedPreferences? = null
 
     fun init(context: Context) {
-        prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        // Reset usage if new day
+        if (initialized) return          // <-- prevents race + double reset
+        synchronized(this) {
+            if (initialized) return
+            prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            resetDayIfNeeded()
+            loadFromPrefs()
+            initialized = true
+        }
+    }
+
+    // BUG FIX: Daily reset ONLY at init meant that running past midnight = stale data.
+    // Now called on every trackAppStart() to catch midnight rollover.
+    private fun resetDayIfNeeded() {
+        val p = prefs ?: return
         val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault())
             .format(java.util.Date())
-        val savedDate = prefs!!.getString(KEY_DATE, "")
-        if (savedDate != today) {
-            prefs!!.edit().putString(KEY_DATE, today).remove(KEY_USAGE).apply()
+        if (p.getString(KEY_DATE, "") != today) {
+            p.edit().putString(KEY_DATE, today).remove(KEY_USAGE)
+                .remove(KEY_LAST_PKG).remove(KEY_LAST_START).apply()
+            todayUsage.clear()
+            lastUsagePkg   = ""
+            lastUsageStart = 0L
         }
-        loadFromPrefs()
     }
 
     private fun loadFromPrefs() {
         val p = prefs ?: return
-        // Blocked apps
-        val blockedJson = p.getString(KEY_BLOCKED, "[]") ?: "[]"
+
         blockedApps.clear()
         try {
-            val arr = JSONArray(blockedJson)
+            val arr = JSONArray(p.getString(KEY_BLOCKED, "[]") ?: "[]")
             for (i in 0 until arr.length()) blockedApps.add(arr.getString(i))
         } catch (_: Exception) {}
-        // Time limits
-        val limitsJson = p.getString(KEY_LIMITS, "{}") ?: "{}"
+
         timeLimits.clear()
         try {
-            val obj = JSONObject(limitsJson)
+            val obj = JSONObject(p.getString(KEY_LIMITS, "{}") ?: "{}")
             for (key in obj.keys()) timeLimits[key] = obj.getInt(key)
         } catch (_: Exception) {}
-        // Today usage
-        val usageJson = p.getString(KEY_USAGE, "{}") ?: "{}"
+
         todayUsage.clear()
         try {
-            val obj = JSONObject(usageJson)
+            val obj = JSONObject(p.getString(KEY_USAGE, "{}") ?: "{}")
             for (key in obj.keys()) todayUsage[key] = obj.getLong(key)
         } catch (_: Exception) {}
+
+        // BUG FIX: Restore in-flight session so service restart doesn't lose screen time
+        lastUsagePkg   = p.getString(KEY_LAST_PKG, "") ?: ""
+        lastUsageStart = p.getLong(KEY_LAST_START, 0L)
     }
 
     fun setBlockedApps(pkgs: List<String>) {
-        blockedApps.clear()
-        blockedApps.addAll(pkgs)
-        val arr = JSONArray(pkgs)
-        prefs?.edit()?.putString(KEY_BLOCKED, arr.toString())?.apply()
+        blockedApps.clear(); blockedApps.addAll(pkgs)
+        prefs?.edit()?.putString(KEY_BLOCKED, JSONArray(pkgs).toString())?.apply()
     }
 
     fun setTimeLimit(pkg: String, limitMinutes: Int) {
         if (limitMinutes <= 0) timeLimits.remove(pkg) else timeLimits[pkg] = limitMinutes
-        prefs?.edit()?.putString(KEY_LIMITS, JSONObject(timeLimits as Map<*, *>).toString())?.apply()
+        // BUG FIX: JSONObject(Map<*,*>) cast was unsafe — explicit toMap() is type-safe
+        prefs?.edit()?.putString(KEY_LIMITS,
+            JSONObject(timeLimits.toMap<String, Any>()).toString())?.apply()
     }
 
     fun isBlocked(pkg: String): Boolean = blockedApps.contains(pkg)
@@ -78,45 +99,46 @@ object AppBlockerManager {
     fun isTimeLimitExceeded(pkg: String): Boolean {
         val limit = timeLimits[pkg] ?: return false
         val usedMs = todayUsage[pkg] ?: 0L
-        return (usedMs / 60000L) >= limit
+        return (usedMs / 60_000L) >= limit
     }
 
     fun trackAppStart(pkg: String) {
+        // BUG FIX: Check for day rollover on every app switch, not just at service start
+        resetDayIfNeeded()
         if (lastUsagePkg.isNotEmpty()) trackAppEnd()
-        lastUsagePkg  = pkg
+        lastUsagePkg   = pkg
         lastUsageStart = System.currentTimeMillis()
+        // Persist in-flight session so restart doesn't lose it
+        prefs?.edit()?.putString(KEY_LAST_PKG, pkg)?.putLong(KEY_LAST_START, lastUsageStart)?.apply()
     }
 
     fun trackAppEnd() {
         if (lastUsagePkg.isEmpty() || lastUsageStart == 0L) return
         val elapsed = System.currentTimeMillis() - lastUsageStart
-        todayUsage[lastUsagePkg] = (todayUsage[lastUsagePkg] ?: 0L) + elapsed
+        val prev    = todayUsage[lastUsagePkg] ?: 0L
+        todayUsage[lastUsagePkg] = prev + elapsed
         lastUsagePkg  = ""; lastUsageStart = 0L
-        prefs?.edit()?.putString(KEY_USAGE, JSONObject(todayUsage as Map<*, *>).toString())?.apply()
+        prefs?.edit()
+            ?.putString(KEY_USAGE, JSONObject(todayUsage.toMap<String, Any>()).toString())
+            ?.remove(KEY_LAST_PKG)?.remove(KEY_LAST_START)?.apply()
     }
 
     fun getDailyReport(): JSONObject {
-        trackAppEnd() // flush current session
+        trackAppEnd()
         val apps = JSONArray()
-        todayUsage.entries
-            .sortedByDescending { it.value }
-            .take(20)
-            .forEach { (pkg, ms) ->
-                apps.put(JSONObject().apply {
-                    put("package", pkg)
-                    put("minutes", ms / 60000L)
-                })
-            }
+        todayUsage.entries.sortedByDescending { it.value }.take(20).forEach { (pkg, ms) ->
+            apps.put(JSONObject().apply { put("package", pkg); put("minutes", ms / 60_000L) })
+        }
         return JSONObject().apply {
             put("date", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
                 .format(java.util.Date()))
             put("apps", apps)
-            put("total_minutes", todayUsage.values.sum() / 60000L)
+            put("total_minutes", todayUsage.values.sum() / 60_000L)
             put("blocked_count", blockedApps.size)
         }
     }
 
-    fun getBlockedApps() = blockedApps.toList()
-    fun getTimeLimits() = timeLimits.toMap()
-    fun getTodayUsageMinutes(pkg: String) = (todayUsage[pkg] ?: 0L) / 60000L
+    fun getBlockedApps()          = blockedApps.toList()
+    fun getTimeLimits()            = timeLimits.toMap()
+    fun getTodayUsageMinutes(pkg: String) = (todayUsage[pkg] ?: 0L) / 60_000L
 }
