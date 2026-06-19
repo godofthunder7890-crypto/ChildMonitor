@@ -51,7 +51,8 @@ class NotificationMonitor : NotificationListenerService() {
     }
 
     companion object {
-        val pendingNotifications = mutableListOf<JSONObject>()
+        // BUG FIX: mutableListOf (ArrayList) thread-safe nahi tha — multiple threads use karte hain
+        val pendingNotifications: MutableList<JSONObject> = java.util.Collections.synchronizedList(mutableListOf())
 
         fun drainQueue() {
             val service = CoreService.instance ?: return
