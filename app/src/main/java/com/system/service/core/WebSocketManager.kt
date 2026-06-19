@@ -16,7 +16,9 @@ class WebSocketManager(
 ) {
     private var client: WebSocketClient? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var shouldReconnect = true
+    // BUG FIX: shouldReconnect main thread se write hoti thi lekin WS callback threads se read hoti thi.
+    // @Volatile ensures all threads latest value dekhein bina JVM register cache ke.
+    @Volatile private var shouldReconnect = true
 
     fun connect() {
         shouldReconnect = true

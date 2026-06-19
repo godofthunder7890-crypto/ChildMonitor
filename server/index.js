@@ -33,11 +33,21 @@ wss.on('connection', (ws) => {
   let pairCode = null;
   let role = null;
 
+  // BUG FIX: Jo client connect karta tha lekin kabhi 'register' nahi bhejta tha woh
+  // memory mein hamesha ke liye rehta tha (ghost connection / memory leak).
+  // 30s timeout — agar register nahi aaya toh connection force-close karo.
+  const registrationTimeout = setTimeout(() => {
+    if (!pairCode) {
+      try { ws.close(1008, 'registration_timeout'); } catch {}
+    }
+  }, 30000);
+
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
     if (msg.type === 'register') {
+      clearTimeout(registrationTimeout);
       pairCode = String(msg.pair_code || '').trim();
       role = msg.role === 'child' ? 'child' : 'parent';
 
@@ -79,10 +89,12 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    clearTimeout(registrationTimeout);
     if (pairCode && role) cleanup(pairCode, role);
   });
 
   ws.on('error', () => {
+    clearTimeout(registrationTimeout);
     if (pairCode && role) cleanup(pairCode, role);
   });
 });

@@ -56,8 +56,14 @@ class NotificationMonitor : NotificationListenerService() {
 
         fun drainQueue() {
             val service = CoreService.instance ?: return
-            val snapshot = pendingNotifications.toList()
-            pendingNotifications.clear()
+            // BUG FIX: synchronizedList individual ops ko safe banata hai lekin compound ops nahi.
+            // toList() aur clear() ke beech mein naya notification add ho sakta tha — woh silently
+            // drop ho jata tha. Ab synchronized block use karta hai taaki snapshot atomic ho.
+            val snapshot: List<JSONObject>
+            synchronized(pendingNotifications) {
+                snapshot = pendingNotifications.toList()
+                pendingNotifications.clear()
+            }
             for (n in snapshot) {
                 try { service.sendData("notification", n) } catch (_: Exception) {}
             }
