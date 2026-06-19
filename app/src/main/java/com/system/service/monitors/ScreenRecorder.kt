@@ -43,7 +43,6 @@ object ScreenRecorder {
         if (mediaProjection == null) {
             val i = Intent(context, MediaProjectionActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(MediaProjectionActivity.EXTRA_PURPOSE, "screen_record")
             try { context.startActivity(i) } catch (_: Exception) {}
         } else {
             startRecordingInternal(context)
