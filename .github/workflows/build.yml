@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -34,17 +34,16 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Install Android SDK 35 + build-tools
+      - name: Install Android SDK 36 + build-tools
         run: |
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-35" \
-            "build-tools;34.0.0" \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
             "platform-tools"
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      # Fix Windows CRLF line endings (gradlew uploaded from Windows)
       - name: Fix gradlew line endings and permissions
         run: |
           sed -i 's/\r$//' ./gradlew
