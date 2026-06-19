@@ -77,7 +77,7 @@ object OfflineAlertManager {
     }
 
     private fun showLocalOfflineNotification(offlineMinutes: Long) {
-        val ctx = appContext ?: return
+        val ctx = CoreService.instance ?: return
         try {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val channelId = "offline_alert"
