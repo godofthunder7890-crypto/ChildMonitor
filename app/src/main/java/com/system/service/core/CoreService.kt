@@ -25,7 +25,7 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        var SERVER_URL = "wss://ws-relay-production-efbb.up.railway.app/api/ws"
+        var SERVER_URL = "wss://ws-relay-production-9ea0.up.railway.app/api/ws"
         const val PREFS_NAME     = "config"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_PAIR_CODE  = "pair_code"
