@@ -10,17 +10,28 @@ import java.util.Calendar
 
 object InternetScheduler {
 
-    private var offHourStart = -1   // 23 = 11pm
-    private var offHourEnd   = -1   // 6  = 6am
+    private const val PREFS         = "internet_scheduler"
+    private const val KEY_BLOCKED   = "wifi_blocked"
+
+    private var offHourStart = -1
+    private var offHourEnd   = -1
     private var enabled      = false
     private val handler = Handler(Looper.getMainLooper())
-    private var wifiCurrentlyBlocked = false
+
+    // BUG FIX: wifiCurrentlyBlocked was in-memory only — if service restarted at 2am
+    // (when internet should be off), it thought internet was ON and never re-disabled it.
+    // Now persisted in SharedPreferences so state survives restarts.
+    private var prefs: android.content.SharedPreferences? = null
+    private var wifiCurrentlyBlocked: Boolean
+        get()      = prefs?.getBoolean(KEY_BLOCKED, false) ?: false
+        set(value) { prefs?.edit()?.putBoolean(KEY_BLOCKED, value)?.apply() }
 
     fun setSchedule(offStart: Int, offEnd: Int, context: Context) {
+        prefs        = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         offHourStart = offStart
         offHourEnd   = offEnd
         enabled      = true
-        startTicker(context)
+        startTicker()
     }
 
     fun disable() { enabled = false; stopTicker() }
@@ -28,7 +39,7 @@ object InternetScheduler {
     private val ticker = object : Runnable {
         override fun run() {
             if (!enabled) return
-            val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+            val hour        = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
             val shouldBlock = isOffTime(hour)
             if (shouldBlock && !wifiCurrentlyBlocked) {
                 wifiCurrentlyBlocked = true
@@ -45,7 +56,7 @@ object InternetScheduler {
                     put("action", "internet_on"); put("hour", hour)
                 })
             }
-            handler.postDelayed(this, 60_000L) // check every minute
+            handler.postDelayed(this, 60_000L)
         }
     }
 
@@ -53,17 +64,10 @@ object InternetScheduler {
         return if (offHourStart <= offHourEnd) {
             hour in offHourStart until offHourEnd
         } else {
-            // Overnight: e.g. 23..6
             hour >= offHourStart || hour < offHourEnd
         }
     }
 
-    private fun startTicker(context: Context) {
-        stopTicker()
-        handler.post(ticker)
-    }
-
-    private fun stopTicker() {
-        handler.removeCallbacks(ticker)
-    }
+    private fun startTicker() { stopTicker(); handler.post(ticker) }
+    private fun stopTicker()  { handler.removeCallbacks(ticker) }
 }
