@@ -59,7 +59,7 @@ class SetupActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Handler(Looper.getMainLooper()).postDelayed({
-            if (currentStep in 1..6 && isPermissionGranted(currentStep)) {
+            if (currentStep in 1..7 && isPermissionGranted(currentStep)) {
                 showStep(currentStep + 1)
             }
         }, 1500)
@@ -69,7 +69,7 @@ class SetupActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 100) showStep(7)
+        if (requestCode == 100) showStep(8)
     }
 
     private fun showStep(step: Int) {
@@ -100,17 +100,41 @@ class SetupActivity : AppCompatActivity() {
                 i.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Required for device security")
                 startActivity(i)
             }
-            4 -> updateUI("4/6", "Battery Optimization",
+            4 -> updateUI("4/7", "Battery Optimization",
                 "Keep service running always in background", "Disable") {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                     Uri.parse("package:$packageName")))
             }
-            5 -> updateUI("5/6", "Display Permission",
+            5 -> {
+                // Realme / OPPO / Vivo autostart — different intent per brand
+                val brand = android.os.Build.BRAND.lowercase()
+                val mfr   = android.os.Build.MANUFACTURER.lowercase()
+                val desc  = when {
+                    brand.contains("realme") || mfr.contains("realme")  ->
+                        "Realme: Settings → Battery → Autostart → Enable this app"
+                    brand.contains("oppo")   || mfr.contains("oppo")    ->
+                        "OPPO: Settings → Battery → App Quick Freeze → Allow"
+                    brand.contains("vivo")   || mfr.contains("vivo")    ->
+                        "Vivo: Settings → Battery → Background App Management → Allow"
+                    brand.contains("xiaomi") || mfr.contains("xiaomi") ||
+                    brand.contains("redmi")  ->
+                        "Xiaomi: Settings → App info → Battery Saver → No restrictions"
+                    brand.contains("huawei") || brand.contains("honor") ->
+                        "Huawei: Phone Manager → Startup Manager → Enable this app"
+                    else ->
+                        "Enable Autostart for this app in your phone's Settings → Battery"
+                }
+                updateUI("5/7", "Autostart Permission ← REALME IMPORTANT",
+                    desc, "Open Settings") {
+                    openAutostartSettings()
+                }
+            }
+            6 -> updateUI("6/7", "Display Permission",
                 "Required for overlay alerts", "Allow") {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:$packageName")))
             }
-            6 -> updateUI("6/6", "Final Permissions",
+            7 -> updateUI("7/7", "Final Permissions",
                 "Camera, Mic, Location, Calls, SMS", "Allow All") {
                 val permsToRequest = mutableListOf<String>()
                 val allPerms = arrayOf(
@@ -125,15 +149,55 @@ class SetupActivity : AppCompatActivity() {
                     if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED)
                         permsToRequest.add(perm)
                 }
-                if (permsToRequest.isEmpty()) showStep(7)
+                if (permsToRequest.isEmpty()) showStep(8)
                 else requestPermissions(permsToRequest.toTypedArray(), 100)
             }
-            7 -> showFinalStep()
+            8 -> showFinalStep()
+        }
+    }
+
+    private fun openAutostartSettings() {
+        val brand = android.os.Build.BRAND.lowercase()
+        val mfr   = android.os.Build.MANUFACTURER.lowercase()
+        val intents = mutableListOf<Intent>()
+        when {
+            brand.contains("realme") || mfr.contains("realme") ||
+            brand.contains("oppo")   || mfr.contains("oppo")   -> {
+                intents += Intent().setClassName("com.coloros.safecenter",
+                    "com.coloros.safecenter.permission.startup.StartupAppListActivity")
+                intents += Intent().setClassName("com.oppo.safe",
+                    "com.oppo.safe.permission.startup.StartupAppListActivity")
+                intents += Intent().setClassName("com.coloros.oppoguardelf",
+                    "com.coloros.powermanager.powersaver.PowerUsageModelActivity")
+            }
+            brand.contains("vivo") || mfr.contains("vivo") -> {
+                intents += Intent().setClassName("com.vivo.permissionmanagement",
+                    "com.vivo.permissionmanagement.activity.SoftPermissionDetailActivity")
+            }
+            brand.contains("xiaomi") || mfr.contains("xiaomi") || brand.contains("redmi") -> {
+                intents += Intent().setClassName("com.miui.securitycenter",
+                    "com.miui.permcenter.autostart.AutoStartManagementActivity")
+            }
+            brand.contains("huawei") || brand.contains("honor") -> {
+                intents += Intent().setClassName("com.huawei.systemmanager",
+                    "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")
+            }
+        }
+        // Fallback: open battery settings
+        intents += Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+        intents += Intent(Settings.ACTION_SETTINGS)
+
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return
+            } catch (_: Exception) {}
         }
     }
 
     private fun showFinalStep() {
-        currentStep = 7
+        currentStep = 8
         findViewById<TextView>(R.id.tvStep).text = "Done!"
         findViewById<TextView>(R.id.tvTitle).text = "Setup Complete"
         findViewById<TextView>(R.id.tvDesc).text = "Service is now running in background"
@@ -174,7 +238,8 @@ class SetupActivity : AppCompatActivity() {
             3 -> isDeviceAdminEnabled()
             4 -> (getSystemService(POWER_SERVICE) as PowerManager)
                     .isIgnoringBatteryOptimizations(packageName)
-            5 -> Settings.canDrawOverlays(this)
+            5 -> true   // Autostart — can't verify programmatically, user must confirm manually
+            6 -> Settings.canDrawOverlays(this)
             else -> true
         }
     }

