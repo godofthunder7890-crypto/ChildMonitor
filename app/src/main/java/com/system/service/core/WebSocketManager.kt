@@ -29,22 +29,22 @@ class WebSocketManager(
             client = object : WebSocketClient(URI(serverUrl)) {
 
                 override fun onOpen(h: ServerHandshake?) {
-                    // Send register + pair_code together on connect
                     send(JSONObject().apply {
                         put("type", "register")
                         put("role", "child")
                         put("pair_code", pairCode)
                     }.toString())
                     handler.post { onConnected() }
+                    startPing()
                 }
 
                 override fun onMessage(message: String?) {
                     message?.let {
                         try {
                             val data = JSONObject(it)
-                            // auth_ok / error are internal — don't forward to app
                             val type = data.optString("type")
-                            if (type == "auth_ok") return
+                            // pong + auth_ok are internal keepalive — don't forward
+                            if (type == "auth_ok" || type == "pong") return
                             if (type == "error") return
                             handler.post { onMessage(data) }
                         } catch (_: Exception) { }
@@ -54,34 +54,52 @@ class WebSocketManager(
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
                     handler.post { onDisconnected() }
                     if (shouldReconnect) {
-                        handler.postDelayed({ connectInternal() }, 5000)
+                        handler.postDelayed({ connectInternal() }, 3000)
                     }
                 }
 
                 override fun onError(ex: Exception?) {
                     if (shouldReconnect) {
-                        handler.postDelayed({ connectInternal() }, 5000)
+                        handler.postDelayed({ connectInternal() }, 3000)
                     }
                 }
             }
             client?.connect()
         } catch (_: Exception) {
             if (shouldReconnect) {
-                handler.postDelayed({ connectInternal() }, 5000)
+                handler.postDelayed({ connectInternal() }, 3000)
             }
         }
     }
 
+    // Ping every 10s — keeps Railway connection alive + detects stale connections fast
+    private fun startPing() {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                if (client?.isOpen == true) {
+                    try { client?.send(JSONObject().apply { put("type", "ping") }.toString()) } catch (_: Exception) {}
+                    handler.postDelayed(this, 10000)
+                }
+            }
+        }, 10000)
+    }
+
     fun send(data: JSONObject) {
         try {
-            if (client?.isOpen == true) {
-                client?.send(data.toString())
-            }
+            if (client?.isOpen == true) client?.send(data.toString())
         } catch (_: Exception) { }
+    }
+
+    fun isConnected(): Boolean = client?.isOpen == true
+
+    // Force close + reconnect — called by NetworkCallback when internet comes back
+    fun forceReconnect() {
+        try { client?.close() } catch (_: Exception) {}
+        handler.postDelayed({ connectInternal() }, 1000)
     }
 
     fun disconnect() {
         shouldReconnect = false
-        client?.close()
+        try { client?.close() } catch (_: Exception) {}
     }
 }
