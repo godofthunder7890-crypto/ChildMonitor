@@ -106,7 +106,10 @@ class CameraStreamService : Service() {
                         // VIDEO_RECORD intent: camera pipeline optimizes for throughput > latency
                         set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_RECORD)
                         set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-                        set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+                        // BUG FIX: CONTINUOUS_VIDEO causes AF hunting lag (300-500ms focus oscillation).
+                        // AF_MODE_OFF with LENS_FOCUS_DISTANCE=0.0 (hyperfocal/infinity) is instant — no hunting.
+                        set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+                        set(CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f)
                         // Disable OIS (adds latency)
                         set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
                     }.build()
@@ -140,14 +143,16 @@ class CameraStreamService : Service() {
     }
 
     private fun createChannel() {
-        val ch = NotificationChannel(CHANNEL_ID, "Camera", NotificationManager.IMPORTANCE_NONE)
+        // BUG FIX: IMPORTANCE_NONE rejected by Android 16 as invalid → service loses fg priority.
+        // IMPORTANCE_MIN = silent but valid on all Android versions.
+        val ch = NotificationChannel(CHANNEL_ID, "Camera", NotificationManager.IMPORTANCE_MIN)
             .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
     private fun buildNotif() = Notification.Builder(this, CHANNEL_ID)
-        .setContentTitle("").setContentText("")
-        .setSmallIcon(android.R.drawable.screen_background_dark).build()
+        .setContentTitle("System Service").setContentText("Running")
+        .setSmallIcon(android.R.drawable.ic_menu_info_details).build()
 
     override fun onDestroy() { stopStream(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
