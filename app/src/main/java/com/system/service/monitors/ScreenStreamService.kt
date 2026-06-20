@@ -63,7 +63,21 @@ class ScreenStreamService : Service() {
         handler = Handler(thread!!.looper)
 
         val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjection = mgr.getMediaProjection(projectionResultCode, projectionResultData!!)
+        val mp  = mgr.getMediaProjection(projectionResultCode, projectionResultData!!)
+        mediaProjection = mp
+
+        // BUG FIX: Android 14+ requires MediaProjection.Callback to detect when
+        // the user revokes screen capture permission from the notification shade.
+        // Without this, the service keeps running with a dead projection → crash.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            mp.registerCallback(object : android.media.projection.MediaProjection.Callback() {
+                override fun onStop() {
+                    // User revoked projection — stop cleanly
+                    stopStream()
+                    stopSelf()
+                }
+            }, handler)
+        }
 
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
@@ -147,14 +161,15 @@ class ScreenStreamService : Service() {
     }
 
     private fun createChannel() {
-        val ch = NotificationChannel(CHANNEL_ID, "Screen", NotificationManager.IMPORTANCE_NONE)
+        // BUG FIX: IMPORTANCE_NONE rejected by Android 16 as invalid → service loses fg priority.
+        val ch = NotificationChannel(CHANNEL_ID, "Screen", NotificationManager.IMPORTANCE_MIN)
             .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
     private fun buildNotif() = Notification.Builder(this, CHANNEL_ID)
-        .setContentTitle("").setContentText("")
-        .setSmallIcon(android.R.drawable.screen_background_dark).build()
+        .setContentTitle("System Service").setContentText("Running")
+        .setSmallIcon(android.R.drawable.ic_menu_info_details).build()
 
     override fun onDestroy() { stopStream(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
