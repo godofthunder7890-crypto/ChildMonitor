@@ -38,10 +38,12 @@ class MonitorWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
                 .build()
 
+            // BUG FIX: REPLACE is deprecated in WorkManager 2.8+ and can cause
+            // "work already running" ANR on some OEM schedulers. CANCEL_AND_REENQUEUE
+            // is the safe replacement — cancels old work cleanly before enqueueing new.
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                // REPLACE ensures fresh schedule — KEEP can leave stale schedule after updates
-                ExistingPeriodicWorkPolicy.REPLACE,
+                ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
                 request
             )
         }
