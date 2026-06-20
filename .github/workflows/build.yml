@@ -1,22 +1,19 @@
-name: Build ChildMonitor APK
+name: Build ChildMonitor Debug APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, master]
   pull_request:
-    branches: [ main ]
+    branches: [main, master]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -24,75 +21,45 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
+          cache: gradle
 
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: latest
+          accept-android-sdk-licenses: true
+          packages: |
+            platforms;android-36
+            build-tools;36.0.0
+            platform-tools
 
-      - name: Install Android SDK 36 + build-tools
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-36" \
-            "build-tools;35.0.0" \
-            "platform-tools"
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
 
-      - name: Fix gradlew line endings and permissions
-        run: |
-          sed -i 's/\r$//' ./gradlew
-          chmod +x ./gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
+        env:
+          JAVA_TOOL_OPTIONS: "-Xmx4g"
 
-      - name: Verify APK was produced
-        run: |
-          APK=$(find app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK not found!"
-            find app/build -name "*.apk" 2>/dev/null || true
-            exit 1
-          fi
-          echo "APK: $APK  |  Size: $(du -sh "$APK" | cut -f1)"
-
-      - name: Prepare release artifact
-        run: |
-          mkdir -p dist
-          cp app/build/outputs/apk/debug/*.apk dist/ChildMonitor.apk
-          echo "BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_ENV
-          echo "SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
-
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
+        if: success()
         with:
-          name: ChildMonitor-Debug-${{ github.run_number }}
-          path: dist/ChildMonitor.apk
+          name: ChildMonitor-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Delete previous latest-build release
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: gh release delete latest-build --yes 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release with APK
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - name: Show APK info
+        if: success()
         run: |
-          gh release create latest-build dist/ChildMonitor.apk \
-            --title "ChildMonitor — Latest Build (${{ env.SHORT_SHA }})" \
-            --notes "**Commit:** \`${{ env.SHORT_SHA }}\`  |  **Built:** ${{ env.BUILD_TIME }}
-
-          ### Install on child device
-          1. Download **ChildMonitor.apk** below
-          2. Enable *Install unknown apps* in Settings
-          3. Install → Open → enter pair code → grant all permissions" \
-            --prerelease
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Print download URL
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          echo "APK URL: https://github.com/${{ github.repository }}/releases/download/latest-build/ChildMonitor.apk"
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          echo "APK: $APK"
+          ls -lh "$APK"
