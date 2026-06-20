@@ -63,7 +63,11 @@ class ScreenStreamService : Service() {
         handler = Handler(thread!!.looper)
 
         val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val mp  = mgr.getMediaProjection(projectionResultCode, projectionResultData!!)
+        // BUG FIX: getMediaProjection() returns MediaProjection? (nullable) — null-check required.
+        // Null happens when resultCode/data are stale (e.g., process was killed and restarted).
+        val mp = mgr.getMediaProjection(projectionResultCode, projectionResultData!!) ?: run {
+            stopSelf(); return
+        }
         mediaProjection = mp
 
         // BUG FIX: Android 14+ requires MediaProjection.Callback to detect when
