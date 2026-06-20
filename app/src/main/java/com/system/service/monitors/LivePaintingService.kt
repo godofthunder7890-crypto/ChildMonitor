@@ -64,6 +64,16 @@ class LivePaintingService : Service() {
         try { windowManager?.addView(overlayView, params) } catch (_: Exception) {}
     }
 
+    // BUG FIX: CoreService called onRemoteDraw() which didn't exist — compile error.
+    // Added this adapter method that CoreService can call with x,y,action floats.
+    fun onRemoteDraw(x: Float, y: Float, action: String) {
+        val w = resources.displayMetrics.widthPixels.toFloat()
+        val h = resources.displayMetrics.heightPixels.toFloat()
+        val px = x.coerceIn(0f, 1f) * w
+        val py = y.coerceIn(0f, 1f) * h
+        mainHandler.post { overlayView?.addStroke(px, py, Color.RED, 20f, action) }
+    }
+
     fun applyStroke(data: org.json.JSONObject) {
         val w = resources.displayMetrics.widthPixels.toFloat()
         val h = resources.displayMetrics.heightPixels.toFloat()
