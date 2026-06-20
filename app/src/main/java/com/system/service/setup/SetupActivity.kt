@@ -135,16 +135,24 @@ class SetupActivity : AppCompatActivity() {
                     Uri.parse("package:$packageName")))
             }
             7 -> updateUI("7/7", "Final Permissions",
-                "Camera, Mic, Location, Calls, SMS", "Allow All") {
+                "Camera, Mic, Location, Calls, SMS, Contacts", "Allow All") {
                 val permsToRequest = mutableListOf<String>()
-                val allPerms = arrayOf(
-                    android.Manifest.permission.CAMERA,
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.ACCESS_FINE_LOCATION,
-                    android.Manifest.permission.READ_CALL_LOG,
-                    android.Manifest.permission.READ_SMS,
-                    android.Manifest.permission.READ_PHONE_STATE
-                )
+                // BUG FIX: READ_CONTACTS and READ_PHONE_NUMBERS were missing —
+                // contact blocking and call-log enrichment silently failed without them.
+                val allPerms = buildList {
+                    add(android.Manifest.permission.CAMERA)
+                    add(android.Manifest.permission.RECORD_AUDIO)
+                    add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    add(android.Manifest.permission.READ_CALL_LOG)
+                    add(android.Manifest.permission.READ_SMS)
+                    add(android.Manifest.permission.READ_PHONE_STATE)
+                    add(android.Manifest.permission.READ_PHONE_NUMBERS)
+                    add(android.Manifest.permission.READ_CONTACTS)
+                    // POST_NOTIFICATIONS required on Android 13+ for foreground service notification
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
                 for (perm in allPerms) {
                     if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED)
                         permsToRequest.add(perm)
