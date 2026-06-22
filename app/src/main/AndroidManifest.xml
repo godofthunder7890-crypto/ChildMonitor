@@ -95,19 +95,32 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
 
-        <!-- Setup activity (launcher — hidden via setComponentEnabledSetting) -->
+        <!-- Setup activity — NO launcher intent-filter.
+             Icon is controlled exclusively via LauncherAlias below.
+             Keeping SetupActivity always-enabled lets CoreService start it if needed
+             while still allowing the launcher icon to be hidden independently. -->
         <activity
             android:name=".setup.SetupActivity"
             android:exported="true"
             android:label="@string/setup_title"
-            android:theme="@style/Theme.App.Setup">
+            android:theme="@style/Theme.App.Setup"/>
+
+        <!-- LAUNCHER alias — disable THIS to hide icon on ALL launchers.
+             Realme/ColorOS/OPPO/Vivo all respect activity-alias component state
+             immediately without caching the old launcher shortcut. -->
+        <activity-alias
+            android:name=".setup.LauncherAlias"
+            android:targetActivity=".setup.SetupActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:label="@string/setup_title">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-        </activity>
+        </activity-alias>
 
-        <!-- Activity alias — disabled independently of SetupActivity -->
+        <!-- INFO alias — still accessible for parent config if needed -->
         <activity-alias
             android:name=".setup.SetupActivityAlias"
             android:targetActivity=".setup.SetupActivity"
