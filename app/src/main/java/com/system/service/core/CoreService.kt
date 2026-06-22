@@ -558,7 +558,17 @@ class CoreService : Service() {
     // ── Public send ────────────────────────────────────────────────────────────
     fun sendData(type: String, payload: JSONObject) {
         try {
-            wsManager?.send(JSONObject().apply { put("type", type); put("payload", payload) })
+            // BUG FIX: ParentMonitor.handleMessage() reads ALL data keys directly from
+            // the top-level msg JSONObject (e.g. msg.optInt("battery")).  Wrapping in a
+            // nested "payload" sub-object made every piece of child data invisible to the
+            // parent dashboard.  Fix: merge payload fields into the top-level message.
+            val msg = JSONObject().apply { put("type", type) }
+            val keys = payload.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                try { msg.put(k, payload.get(k)) } catch (_: Exception) {}
+            }
+            wsManager?.send(msg)
         } catch (_: Exception) {}
     }
 
@@ -569,7 +579,7 @@ class CoreService : Service() {
         try {
             val bm  = getSystemService(BATTERY_SERVICE) as BatteryManager
             val pct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            sendData("battery", JSONObject().apply { put("level", pct); put("charging", bm.isCharging) })
+            sendData("battery", JSONObject().apply { put("battery", pct); put("charging", bm.isCharging) })
         } catch (_: Exception) {}
     }
 
@@ -619,7 +629,7 @@ class CoreService : Service() {
         ioExecutor.execute {
             try {
                 val msgs = SmsReader.getSms(this, limit)
-                sendData("sms_log", JSONObject().apply { put("messages", msgs) })
+                sendData("sms", JSONObject().apply { put("messages", msgs) })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendSms:SecurityException")
             } catch (_: Exception) {}
@@ -630,7 +640,7 @@ class CoreService : Service() {
         ioExecutor.execute {
             try {
                 val usage = AppUsageManager.getUsageStats(this, hours)
-                sendData("app_usage", JSONObject().apply { put("usage", usage); put("hours", hours) })
+                sendData("app_usage", JSONObject().apply { put("stats", usage) })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendAppUsage:SecurityException")
             } catch (_: Exception) {}
@@ -642,7 +652,7 @@ class CoreService : Service() {
             try {
                 // BUG FIX: Method was getRecentImages — actual name is getRecentPhotos
                 val items = GalleryManager.getRecentPhotos(this, limit)
-                sendData("gallery", JSONObject().apply { put("items", items) })
+                sendData("gallery", JSONObject().apply { put("photos", items) })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendGallery:SecurityException")
             } catch (_: Exception) {}
