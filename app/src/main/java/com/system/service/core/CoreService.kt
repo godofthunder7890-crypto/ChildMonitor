@@ -74,6 +74,8 @@ class CoreService : Service() {
         CrashLogger.install(this)
         CrashLogger.logServiceStart(this, "onCreate")
         HealthReporter.recordServiceStart()
+        // Bug #17 fix: restore internet schedule that was set before service restart
+        InternetScheduler.restoreFromPrefs(this)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         acquireWakeLock()
