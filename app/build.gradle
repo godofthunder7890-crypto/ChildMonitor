@@ -17,10 +17,16 @@ android {
 
     signingConfigs {
         release {
+            // Fix: throw is a statement in Groovy (not an expression) — cannot use ?: throw.
+            // Use local variables + explicit if checks (valid in all Groovy versions).
+            def sp = System.getenv("STORE_PASS")
+            def kp = System.getenv("KEY_PASS")
+            if (!sp) throw new GradleException("STORE_PASS env var not set — add it in CI secrets")
+            if (!kp) throw new GradleException("KEY_PASS env var not set — add it in CI secrets")
             storeFile     rootProject.file(System.getenv("KEYSTORE_PATH") ?: "release.jks")
-            storePassword (System.getenv("STORE_PASS") ?: throw new GradleException("STORE_PASS env var not set — set it in CI or local.properties"))
-            keyAlias      System.getenv("KEY_ALIAS")   ?: "guardian"
-            keyPassword   (System.getenv("KEY_PASS") ?: throw new GradleException("KEY_PASS env var not set — set it in CI or local.properties"))
+            storePassword sp
+            keyAlias      (System.getenv("KEY_ALIAS") ?: "guardian")
+            keyPassword   kp
         }
     }
 
