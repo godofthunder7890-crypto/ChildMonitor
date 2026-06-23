@@ -32,8 +32,9 @@ class HiddenSettingsActivity : AppCompatActivity() {
         tvStatus.text = if (isConn) "Service: RUNNING" else "Service: STOPPED"
         tvStatus.setTextColor(if (isConn) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
 
+        val launcherAlias = "${packageName}.setup.LauncherAlias"
         val iconEnabled = packageManager.getComponentEnabledSetting(
-            ComponentName(this, SetupActivity::class.java)
+            ComponentName(packageName, launcherAlias)
         ) != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
         btnShow.isEnabled = !iconEnabled
         btnHide.isEnabled = iconEnabled
@@ -57,7 +58,7 @@ class HiddenSettingsActivity : AppCompatActivity() {
 
         btnShow.setOnClickListener {
             packageManager.setComponentEnabledSetting(
-                ComponentName(this, SetupActivity::class.java),
+                ComponentName(packageName, launcherAlias),
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
             )
@@ -67,7 +68,7 @@ class HiddenSettingsActivity : AppCompatActivity() {
 
         btnHide.setOnClickListener {
             packageManager.setComponentEnabledSetting(
-                ComponentName(this, SetupActivity::class.java),
+                ComponentName(packageName, launcherAlias),
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
