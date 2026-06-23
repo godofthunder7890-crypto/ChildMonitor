@@ -143,6 +143,11 @@ class SetupActivity : AppCompatActivity() {
                     add(android.Manifest.permission.CAMERA)
                     add(android.Manifest.permission.RECORD_AUDIO)
                     add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    // Bug #26 fix: Android 11+ requires separate runtime request for background location
+                    // Must be requested AFTER FINE_LOCATION is granted (system enforces this order)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
                     add(android.Manifest.permission.READ_CALL_LOG)
                     add(android.Manifest.permission.READ_SMS)
                     add(android.Manifest.permission.READ_PHONE_STATE)
