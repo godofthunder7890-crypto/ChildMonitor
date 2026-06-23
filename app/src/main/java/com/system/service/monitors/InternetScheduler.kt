@@ -31,7 +31,18 @@ object InternetScheduler {
         offHourStart = offStart
         offHourEnd   = offEnd
         enabled      = true
+        prefs!!.edit().putInt("off_start", offStart).putInt("off_end", offEnd).putBoolean("sched_enabled", true).apply()
         startTicker()
+    }
+
+    fun restoreFromPrefs(context: Context) {
+        prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs!!.getBoolean("sched_enabled", false)) {
+            offHourStart = prefs!!.getInt("off_start", -1)
+            offHourEnd   = prefs!!.getInt("off_end", -1)
+            enabled      = true
+            startTicker()
+        }
     }
 
     fun disable() { enabled = false; stopTicker() }
