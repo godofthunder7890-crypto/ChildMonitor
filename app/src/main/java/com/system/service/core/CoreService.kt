@@ -463,8 +463,16 @@ class CoreService : Service() {
                     sendData("emergency_unlocked_all", JSONObject())
                 }
 
-                "wifi_on"              -> runShellCmd("svc wifi enable")
-                "wifi_off"             -> runShellCmd("svc wifi disable")
+                "wifi_on"              -> {
+                    val ok = ShizukuManager.exec("svc wifi enable")
+                    sendData("wifi_changed", JSONObject().apply { put("state", "on"); put("success", ok)
+                        if (!ok) put("error", "Shizuku required for WiFi control on Android 10+") })
+                }
+                "wifi_off"             -> {
+                    val ok = ShizukuManager.exec("svc wifi disable")
+                    sendData("wifi_changed", JSONObject().apply { put("state", "off"); put("success", ok)
+                        if (!ok) put("error", "Shizuku required for WiFi control on Android 10+") })
+                }
 
                 // These commands read ContentProvider — BACKGROUND THREAD
                 "get_gallery"          -> sendGalleryBackground(data.optInt("limit", 20))
@@ -620,13 +628,30 @@ class CoreService : Service() {
     }
 
     // Async — FusedLocation uses callbacks, safe on any thread
+    // BUG FIX #4: lastLocation returns stale/null on fresh boot.
+    // getCurrentLocation() forces a fresh GPS/network fix (max 30s cache).
+    @Suppress("MissingPermission")
     private fun sendLocation() {
         try {
-            fusedLocationClient?.lastLocation?.addOnSuccessListener { loc: Location? ->
-                loc?.let {
-                    sendData("location", JSONObject().apply { put("lat", it.latitude); put("lng", it.longitude); put("accuracy", it.accuracy) })
+            val req = com.google.android.gms.location.CurrentLocationRequest.Builder()
+                .setPriority(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+                .setMaxUpdateAgeMillis(30_000L)
+                .build()
+            fusedLocationClient?.getCurrentLocation(req, null)
+                ?.addOnSuccessListener { loc ->
+                    loc?.let {
+                        sendData("location", JSONObject().apply {
+                            put("lat", it.latitude); put("lng", it.longitude); put("accuracy", it.accuracy)
+                        })
+                    } ?: run {
+                        // Fallback to lastLocation if getCurrentLocation times out
+                        fusedLocationClient?.lastLocation?.addOnSuccessListener { last ->
+                            last?.let { sendData("location", JSONObject().apply {
+                                put("lat", it.latitude); put("lng", it.longitude); put("accuracy", it.accuracy)
+                            }) }
+                        }
+                    }
                 }
-            }
         } catch (_: Exception) {}
     }
 
