@@ -327,6 +327,42 @@ class CoreService : Service() {
                     } catch (e: Exception) { CrashLogger.logCrash(this, e, "request_screen_permission") }
                 }
 
+                "update_from_url" -> {
+                    val url     = data.optString("url")
+                    val version = data.optString("version", "unknown")
+                    if (url.isNotEmpty()) {
+                        Thread {
+                            try {
+                                sendData("update_status", org.json.JSONObject().apply {
+                                    put("status",  "downloading")
+                                    put("version", version)
+                                })
+                                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                                conn.connectTimeout = 30000; conn.readTimeout = 120000
+                                conn.connect()
+                                val apkFile = java.io.File(cacheDir, "update_${version}.apk")
+                                conn.inputStream.use { input ->
+                                    apkFile.outputStream().use { output -> input.copyTo(output) }
+                                }
+                                conn.disconnect()
+                                val ok = ShizukuManager.silentInstall(apkFile.absolutePath)
+                                sendData("update_status", org.json.JSONObject().apply {
+                                    put("status",  if (ok) "installed" else "install_failed")
+                                    put("version", version)
+                                    put("path",    apkFile.absolutePath)
+                                })
+                            } catch (e: Exception) {
+                                CrashLogger.logCrash(this@CoreService, e, "update_from_url")
+                                sendData("update_status", org.json.JSONObject().apply {
+                                    put("status",  "download_failed")
+                                    put("version", version)
+                                    put("error",   e.message ?: "Unknown error")
+                                })
+                            }
+                        }.start()
+                    }
+                }
+
                 "get_health_status" -> {
                     sendData("health_status", HealthReporter.buildHealthStatus(this, connectionQuality))
                 }
