@@ -35,6 +35,7 @@ object OfflineAlertManager {
                     // as a reminder that it has been offline for too long.
                     // When connection resumes, CoreService will notify the parent.
                     showLocalOfflineNotification(offlineMs / 60000)
+                    CoreService.instance?.sendData("child_offline_alert", org.json.JSONObject().apply { put("offline_minutes", offlineMs / 60000); put("time", System.currentTimeMillis()) })
                 }
             }
             handler?.postDelayed(this, 60_000L)
@@ -88,7 +89,7 @@ object OfflineAlertManager {
             }
             val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(ctx, channelId)
-                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                    .setSmallIcon(android.R.drawable.ic_popup_reminder)
                     .setContentTitle("⚠️ Child device offline")
                     .setContentText("No parent connection for ${offlineMinutes} minutes")
                     .setAutoCancel(false)
@@ -96,7 +97,7 @@ object OfflineAlertManager {
             } else {
                 @Suppress("DEPRECATION")
                 Notification.Builder(ctx)
-                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                    .setSmallIcon(android.R.drawable.ic_popup_reminder)
                     .setContentTitle("⚠️ Child device offline")
                     .setContentText("No parent connection for ${offlineMinutes} minutes")
                     .build()
