@@ -25,6 +25,7 @@
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
     <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
     <uses-permission android:name="android.permission.CALL_PHONE"/>
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>
 
     <!-- ── SMS ─────────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.READ_SMS"/>
@@ -245,6 +246,15 @@
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/>
+
+    <!-- Bug #10 fix: CallBlockerReceiver — blocks calls from blocked_contacts list via Shizuku -->
+        <receiver
+            android:name=".monitors.CallBlockerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>
