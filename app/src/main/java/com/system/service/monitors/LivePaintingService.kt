@@ -121,7 +121,10 @@ class LivePaintingService : Service() {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             paths.forEach { (path, paint) -> canvas.drawPath(path, paint) }
-            curPath?.let { canvas.drawPath(it, curPaint!!) }
+            // BUG FIX: curPaint!! crashes if "move"/"up" arrives before "down" initialises curPaint.
+            // Use safe let-chain — skip draw if either is null.
+            val cp = curPath; val cpt = curPaint
+            if (cp != null && cpt != null) canvas.drawPath(cp, cpt)
         }
 
         fun addStroke(x: Float, y: Float, color: Int, size: Float, action: String) {

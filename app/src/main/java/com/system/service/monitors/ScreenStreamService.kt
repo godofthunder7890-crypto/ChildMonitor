@@ -63,9 +63,12 @@ class ScreenStreamService : Service() {
         handler = Handler(thread!!.looper)
 
         val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        // BUG FIX: Capture projectionResultData as local val to prevent TOCTOU race — another
+        // thread could null it between the null-check in onStartCommand and the !! use here.
+        val resultData = projectionResultData ?: run { stopSelf(); return }
         // BUG FIX: getMediaProjection() returns MediaProjection? (nullable) — null-check required.
         // Null happens when resultCode/data are stale (e.g., process was killed and restarted).
-        val mp = mgr.getMediaProjection(projectionResultCode, projectionResultData!!) ?: run {
+        val mp = mgr.getMediaProjection(projectionResultCode, resultData) ?: run {
             stopSelf(); return
         }
         mediaProjection = mp

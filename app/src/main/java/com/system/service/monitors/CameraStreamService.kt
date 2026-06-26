@@ -130,9 +130,13 @@ class CameraStreamService : Service() {
         try {
             mgr.openCamera(camId, object : CameraDevice.StateCallback() {
                 override fun onOpened(cam: CameraDevice) {
+                    // BUG FIX: Race condition — cleanupCamera() can null-out imageReader between
+                    // openCamera() and this async onOpened callback. Capture local val first;
+                    // if null, service is shutting down — close camera and bail out.
+                    val reader = imageReader ?: run { cam.close(); return }
                     cameraDevice = cam
                     val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        addTarget(imageReader!!.surface)
+                        addTarget(reader.surface)
                         set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_RECORD)
                         set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                         // AF_MODE_OFF with focus=0 (hyperfocal) = zero AF hunting lag
@@ -141,7 +145,7 @@ class CameraStreamService : Service() {
                         set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
                             CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
                     }.build()
-                    cam.createCaptureSession(listOf(imageReader!!.surface),
+                    cam.createCaptureSession(listOf(reader.surface),
                         object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(s: CameraCaptureSession) {
                                 if (!streaming.get()) { s.close(); return }
