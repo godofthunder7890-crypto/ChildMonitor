@@ -37,6 +37,19 @@ class LivePaintingService : Service() {
         showOverlay()
     }
 
+    // BUG FIX: live_painting_stop command sends a STOP intent via startService(), but
+    // there was no onStartCommand handler, so the service never actually stopped —
+    // overlay remained on screen indefinitely.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "STOP") {
+            try { overlayView?.let { windowManager?.removeView(it) } } catch (_: Exception) {}
+            stopForeground(true)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         instance = null

@@ -135,25 +135,34 @@ class CameraStreamService : Service() {
                     // if null, service is shutting down — close camera and bail out.
                     val reader = imageReader ?: run { cam.close(); return }
                     cameraDevice = cam
-                    val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        addTarget(reader.surface)
-                        set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_RECORD)
-                        set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-                        // AF_MODE_OFF with focus=0 (hyperfocal) = zero AF hunting lag
-                        set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
-                        set(CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f)
-                        set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
-                            CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
-                    }.build()
-                    cam.createCaptureSession(listOf(reader.surface),
-                        object : CameraCaptureSession.StateCallback() {
-                            override fun onConfigured(s: CameraCaptureSession) {
-                                if (!streaming.get()) { s.close(); return }
-                                session = s
-                                try { s.setRepeatingRequest(req, null, handler) } catch (_: Exception) {}
-                            }
-                            override fun onConfigureFailed(s: CameraCaptureSession) { stopSelf() }
-                        }, handler)
+                    // BUG FIX: Wrap request/session creation in try/catch — teardown racing after
+                    // reader capture can still throw IllegalStateException inside the callback thread.
+                    try {
+                        val req = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                            addTarget(reader.surface)
+                            set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_RECORD)
+                            set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                            // AF_MODE_OFF with focus=0 (hyperfocal) = zero AF hunting lag
+                            set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+                            set(CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f)
+                            set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+                                CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
+                        }.build()
+                        cam.createCaptureSession(listOf(reader.surface),
+                            object : CameraCaptureSession.StateCallback() {
+                                override fun onConfigured(s: CameraCaptureSession) {
+                                    if (!streaming.get()) { s.close(); return }
+                                    session = s
+                                    try { s.setRepeatingRequest(req, null, handler) } catch (_: Exception) {}
+                                }
+                                override fun onConfigureFailed(s: CameraCaptureSession) { stopSelf() }
+                            }, handler)
+                    } catch (_: Exception) {
+                        // Teardown race or camera hardware error — close camera and stop service
+                        try { cam.close() } catch (_: Exception) {}
+                        cameraDevice = null
+                        stopSelf()
+                    }
                 }
                 override fun onDisconnected(cam: CameraDevice) { cam.close(); cameraDevice = null }
                 override fun onError(cam: CameraDevice, e: Int) { cam.close(); cameraDevice = null; stopSelf() }

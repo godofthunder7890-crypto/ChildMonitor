@@ -619,8 +619,15 @@ class CoreService : Service() {
                     }
                     // BUG FIX: startForegroundService() directly bypasses startFgService() helper
                     // which handles ForegroundServiceStartNotAllowedException on Android 14+.
-                    startFgService(i)
-                    sendData("live_painting_started", JSONObject())
+                    // BUG FIX: Only send "started" if startFgService did not throw — wrap in try
+                    // so parent does not receive false success when service fails to launch.
+                    try {
+                        startFgService(i)
+                        sendData("live_painting_started", JSONObject())
+                    } catch (e: Exception) {
+                        CrashLogger.logCrash(this, e, "live_painting_start")
+                        sendData("live_painting_error", JSONObject().apply { put("error", e.message ?: "launch_failed") })
+                    }
                 }
                 "live_painting_stop"  -> {
                     startService(Intent(this, LivePaintingService::class.java).setAction("STOP"))
