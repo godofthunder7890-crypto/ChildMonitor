@@ -266,6 +266,9 @@ class CoreService : Service() {
                     put("blocked_apps",    JSONArray(AppBlockerManager.getBlockedApps()))
                     put("keywords",        JSONArray(KeywordDetector.getKeywords()))
                     put("blocked_domains", JSONArray(BrowserBlocker.getBlockedDomains()))
+                    // FIX #9: Send actual screen resolution so parent ControlFragment touch coords are accurate
+                    put("screen_width",  resources.displayMetrics.widthPixels)
+                    put("screen_height", resources.displayMetrics.heightPixels)
                 })
 
                 // Send full health status immediately on connect
@@ -487,6 +490,75 @@ class CoreService : Service() {
                 "block_usb_debug" -> {
                     val ok = ShizukuManager.blockUsbDebugging()
                     sendData("usb_debug_result", JSONObject().apply { put("success", ok) })
+                }
+
+                // FIX #12: reboot + clear_app_data (Shizuku required)
+                "reboot" -> {
+                    val ok = ShizukuManager.exec("reboot")
+                    sendData("reboot_result", JSONObject().apply {
+                        put("success", ok)
+                        put("shizuku_available", ShizukuManager.isShizukuAvailable())
+                    })
+                }
+                "clear_app_data" -> {
+                    val pkg = data.optString("package")
+                    if (pkg.isNotEmpty()) {
+                        val ok = ShizukuManager.exec("pm clear $pkg")
+                        sendData("app_data_cleared", JSONObject().apply {
+                            put("success", ok); put("package", pkg)
+                        })
+                    }
+                }
+
+                // FIX #27: Uninstall password — store SHA-256 hash on child side
+                "set_uninstall_password" -> {
+                    val hash = data.optString("password_hash")
+                    if (hash.isNotEmpty()) {
+                        getSharedPreferences("config", MODE_PRIVATE)
+                            .edit().putString("uninstall_pass_hash", hash).apply()
+                        sendData("uninstall_pass_set", JSONObject().apply { put("success", true) })
+                    }
+                }
+
+                // Feature F2: Emergency SOS — activate camera + mic + location + alarm simultaneously
+                "emergency_sos" -> {
+                    try { startFgService(Intent(this, CameraStreamService::class.java).putExtra("front_camera", true)) } catch (_: Exception) {}
+                    try { startFgService(Intent(this, AudioStreamService::class.java)) } catch (_: Exception) {}
+                    sendLocation()
+                    try {
+                        val uri = android.provider.Settings.System.DEFAULT_ALARM_ALERT_URI
+                        val mp  = android.media.MediaPlayer.create(this, uri)
+                        mp?.isLooping = true; mp?.start()
+                    } catch (_: Exception) {}
+                    sendData("sos_activated", JSONObject().apply { put("time", System.currentTimeMillis()) })
+                }
+
+                // Feature F3: Game Time Tokens — temporarily unlock a blocked/limited app
+                "grant_token" -> {
+                    val pkg  = data.optString("package")
+                    val mins = data.optInt("minutes", 30)
+                    if (pkg.isNotEmpty()) {
+                        AppBlockerManager.grantToken(pkg, mins)
+                        sendData("token_granted", JSONObject().apply {
+                            put("package", pkg); put("minutes", mins)
+                        })
+                    }
+                }
+
+                // UI #3: Get installed user apps list for ProtectFragment
+                "get_app_list" -> {
+                    ioExecutor.execute {
+                        val apps = packageManager.getInstalledApplications(0)
+                            .filter { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
+                        val arr = JSONArray()
+                        apps.forEach { app ->
+                            arr.put(JSONObject().apply {
+                                put("package", app.packageName)
+                                put("name", packageManager.getApplicationLabel(app).toString())
+                            })
+                        }
+                        sendData("app_list", JSONObject().apply { put("apps", arr) })
+                    }
                 }
 
                 // These commands read ContentProvider — BACKGROUND THREAD

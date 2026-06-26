@@ -18,9 +18,10 @@ android {
     signingConfigs {
         release {
             storeFile     rootProject.file(System.getenv("KEYSTORE_PATH") ?: "release.jks")
-            storePassword System.getenv("STORE_PASS")  ?: "guardian_2024"
+            // FIX #21: Remove hardcoded fallback passwords — release build fails loudly instead
+            storePassword System.getenv("STORE_PASS")  ?: ""
             keyAlias      System.getenv("KEY_ALIAS")   ?: "guardian"
-            keyPassword   System.getenv("KEY_PASS")    ?: "guardian_2024"
+            keyPassword   System.getenv("KEY_PASS")    ?: ""
         }
     }
 

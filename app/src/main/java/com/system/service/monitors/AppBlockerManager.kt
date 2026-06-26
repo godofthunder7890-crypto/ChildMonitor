@@ -19,9 +19,22 @@ object AppBlockerManager {
 
     // BUG FIX: Use thread-safe collections — AccessibilityService thread + CoreService thread
     // both read/write these simultaneously. ConcurrentModificationException was possible.
-    private val blockedApps = CopyOnWriteArraySet<String>()
-    private val timeLimits  = ConcurrentHashMap<String, Int>()
-    private val todayUsage  = ConcurrentHashMap<String, Long>()
+    private val blockedApps  = CopyOnWriteArraySet<String>()
+    private val timeLimits   = ConcurrentHashMap<String, Int>()
+    private val todayUsage   = ConcurrentHashMap<String, Long>()
+
+    // Feature F3: Game Time Tokens — temporarily override block/limit for a package
+    private val tokenExpiry  = ConcurrentHashMap<String, Long>()
+
+    fun grantToken(pkg: String, minutes: Int) {
+        tokenExpiry[pkg] = System.currentTimeMillis() + (minutes * 60_000L)
+    }
+
+    private fun isTokenActive(pkg: String): Boolean {
+        val exp = tokenExpiry[pkg] ?: return false
+        return if (System.currentTimeMillis() < exp) true
+        else { tokenExpiry.remove(pkg); false }
+    }
 
     private var lastUsagePkg   = ""
     private var lastUsageStart = 0L
@@ -82,6 +95,11 @@ object AppBlockerManager {
         lastUsageStart = p.getLong(KEY_LAST_START, 0L)
     }
 
+    // NF #2: Add a single app to blocked list without replacing the full list
+    fun addBlockedApp(pkg: String) {
+        blockedApps.add(pkg)
+    }
+
     fun setBlockedApps(pkgs: List<String>) {
         blockedApps.clear(); blockedApps.addAll(pkgs)
         prefs?.edit()?.putString(KEY_BLOCKED, JSONArray(pkgs).toString())?.apply()
@@ -94,9 +112,13 @@ object AppBlockerManager {
             JSONObject(timeLimits.toMap<String, Any>()).toString())?.apply()
     }
 
-    fun isBlocked(pkg: String): Boolean = blockedApps.contains(pkg)
+    fun isBlocked(pkg: String): Boolean {
+        if (isTokenActive(pkg)) return false  // Feature F3: token overrides block
+        return blockedApps.contains(pkg)
+    }
 
     fun isTimeLimitExceeded(pkg: String): Boolean {
+        if (isTokenActive(pkg)) return false  // Feature F3: token overrides time limit
         val limit = timeLimits[pkg] ?: return false
         val usedMs = todayUsage[pkg] ?: 0L
         return (usedMs / 60_000L) >= limit
