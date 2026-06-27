@@ -796,6 +796,7 @@ class CoreService : Service() {
                         put("allowed", JSONArray(BrowserBlocker.getAllowedDomains()))
                     })
                 }
+            }
 
         } catch (e: SecurityException) {
             // RESEARCH NOTE: SecurityException = missing permission or wrong Android version handling
