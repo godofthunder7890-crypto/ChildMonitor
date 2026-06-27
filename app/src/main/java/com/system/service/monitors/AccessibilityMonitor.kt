@@ -160,6 +160,8 @@ class AccessibilityMonitor : AccessibilityService() {
                                         }
                                     }
                                 }
+                                        uninstallNodes.forEach { it.recycle() } // BUG #2 FIX: prevent node leak
+                                    ownPkgNodes.forEach { it.recycle() } // BUG #2 FIX: prevent node leak
                                 nodes.recycle()
                             }
                         } catch (_: Exception) {}

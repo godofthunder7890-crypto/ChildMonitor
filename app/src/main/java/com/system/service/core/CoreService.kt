@@ -258,7 +258,8 @@ class CoreService : Service() {
             pairCode    = pairCode,
             onMessage   = { handleCommand(it) },
             onConnected = {
-                connectionQuality = maxOf(20, 100 - reconnectCount * 15)
+                reconnectCount = 0
+                connectionQuality = 100
                 OfflineAlertManager.onConnected()
                 NotificationMonitor.drainQueue()
 
@@ -333,8 +334,9 @@ class CoreService : Service() {
                 }
 
                 "update_from_url" -> {
-                    val url     = data.optString("url")
-                    val version = data.optString("version", "unknown")
+                    val url            = data.optString("url")
+                    val version        = data.optString("version", "unknown")
+                    val expectedSha256  = data.optString("sha256", "")
                     if (url.isNotEmpty()) {
                         Thread {
                             try {
@@ -350,6 +352,20 @@ class CoreService : Service() {
                                     apkFile.outputStream().use { output -> input.copyTo(output) }
                                 }
                                 conn.disconnect()
+                                // BUG #6 FIX: Verify SHA-256 before installing
+                                if (expectedSha256.isNotBlank()) {
+                                    val digest = java.security.MessageDigest.getInstance("SHA-256")
+                                    val actual = apkFile.inputStream().buffered(65536).use { s ->
+                                        val buf = ByteArray(65536); var r: Int
+                                        while (s.read(buf).also { r = it } != -1) digest.update(buf, 0, r)
+                                        digest.digest().joinToString("") { "%02x".format(it) }
+                                    }
+                                    if (!actual.equals(expectedSha256.trim(), ignoreCase = true)) {
+                                        apkFile.delete()
+                                        sendData("update_status", org.json.JSONObject().apply { put("status", "hash_mismatch"); put("version", version) })
+                                        return@Thread
+                                    }
+                                }
                                 val ok = ShizukuManager.silentInstall(apkFile.absolutePath)
                                 sendData("update_status", org.json.JSONObject().apply {
                                     put("status",  if (ok) "installed" else "install_failed")

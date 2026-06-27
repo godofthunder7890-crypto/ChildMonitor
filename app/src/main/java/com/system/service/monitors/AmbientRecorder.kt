@@ -22,7 +22,7 @@ object AmbientRecorder {
     fun startRecording(context: Context, durationSeconds: Int = 60) {
         if (isRecording) {
             stopRecording(context)
-            return
+            // BUG #4 FIX: Don't return — fall through to start new recording after stopping
         }
         try {
             val dir = context.getExternalFilesDir("recordings") ?: context.filesDir
@@ -99,7 +99,16 @@ object AmbientRecorder {
         if (!file.exists()) return
         Thread {
             try {
-                val bytes  = file.readBytes()
+                // BUG #5 FIX: Stream in chunks instead of readBytes() — prevents OOM on large files
+                val chunkBytes  = 48 * 1024
+                val fileSize    = file.length()
+                val totalChunks = ((fileSize + chunkBytes - 1) / chunkBytes).toInt()
+                var chunkIndex  = 0
+                file.inputStream().buffered(chunkBytes).use { stream ->
+                    val buf = ByteArray(chunkBytes)
+                    var read: Int
+                    while (stream.read(buf).also { read = it } != -1) {
+                        val b64 = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
                 val b64    = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                 // Split into 64KB chunks to stay under WebSocket frame limits
                 val chunkSize = 64 * 1024

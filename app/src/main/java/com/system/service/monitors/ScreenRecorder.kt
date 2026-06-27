@@ -51,9 +51,15 @@ object ScreenRecorder {
 
     private fun startRecordingInternal(context: Context) {
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        wm.defaultDisplay.getMetrics(metrics)
+        // BUG #14 FIX: Use WindowMetrics on API 30+ — avoids wrong dims on foldables
+        val (sw, sh, dpi) = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            Triple(bounds.width(), bounds.height(), resources.displayMetrics.densityDpi)
+        } else {
+            val m = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION") wm.defaultDisplay.getMetrics(m)
+            Triple(m.widthPixels, m.heightPixels, m.densityDpi)
+        }
         val sw = metrics.widthPixels
         val sh = metrics.heightPixels
         val dpi = metrics.densityDpi
@@ -138,17 +144,21 @@ object ScreenRecorder {
         }
         Thread {
             try {
-                val maxChunk = 60_000
-                val bytes = file.readBytes()
-                val total = (bytes.size + maxChunk - 1) / maxChunk
-                for (i in 0 until total) {
-                    val s = i * maxChunk; val e = minOf(s + maxChunk, bytes.size)
-                    CoreService.instance?.sendData("screen_record_chunk", JSONObject().apply {
-                        put("filename", file.name); put("chunk", i); put("total", total)
-                        put("data", Base64.encodeToString(bytes.copyOfRange(s, e), Base64.NO_WRAP))
-                    })
-                    Thread.sleep(50)
-                }
+                // BUG #5 FIX: Stream file chunks instead of readBytes() — prevents OOM on 50-100MB recordings
+                  val chunkBytes  = 45 * 1024
+                  val fileSize    = file.length()
+                  val totalChunks = ((fileSize + chunkBytes - 1) / chunkBytes).toInt()
+                  var chunkIdx    = 0
+                  file.inputStream().buffered(chunkBytes).use { stream ->
+                      val buf = ByteArray(chunkBytes); var read: Int
+                      while (stream.read(buf).also { read = it } != -1) {
+                          CoreService.instance?.sendData("screen_record_chunk", JSONObject().apply {
+                              put("filename", file.name); put("chunk", chunkIdx); put("total", totalChunks)
+                              put("data", Base64.encodeToString(buf.copyOf(read), Base64.NO_WRAP))
+                          })
+                          chunkIdx++; Thread.sleep(50)
+                      }
+                  }
             } catch (ex: Exception) {
                 CoreService.instance?.sendData("screen_record_file_error",
                     JSONObject().apply { put("error", ex.message ?: "read_error") })

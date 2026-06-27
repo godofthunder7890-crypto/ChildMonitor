@@ -37,6 +37,7 @@ class NotificationMonitor : NotificationListenerService() {
                 put("pkg",   sbn.packageName)
                 put("title", title)
                 put("text",  text)
+                put("ts",    sbn.postTime)  // BUG #9 FIX: actual notification time
             }
 
             val service = CoreService.instance
