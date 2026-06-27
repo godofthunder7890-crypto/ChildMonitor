@@ -728,7 +728,6 @@ class CoreService : Service() {
                         data.optDouble("y", 0.0).toFloat(),
                         data.optString("action", "move"))
                 }
-            }
 
                 // ── Time Request Approval (parent → child) ────────────────────────
                 "time_approved" -> {
