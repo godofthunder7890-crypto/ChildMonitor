@@ -54,16 +54,12 @@ object ScreenRecorder {
         // BUG #14 FIX: Use WindowMetrics on API 30+ — avoids wrong dims on foldables
         val (sw, sh, dpi) = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             val bounds = wm.currentWindowMetrics.bounds
-            Triple(bounds.width(), bounds.height(), resources.displayMetrics.densityDpi)
+            Triple(bounds.width(), bounds.height(), context.resources.displayMetrics.densityDpi)
         } else {
             val m = android.util.DisplayMetrics()
             @Suppress("DEPRECATION") wm.defaultDisplay.getMetrics(m)
             Triple(m.widthPixels, m.heightPixels, m.densityDpi)
         }
-        val sw = metrics.widthPixels
-        val sh = metrics.heightPixels
-        val dpi = metrics.densityDpi
-
         val dir = File(context.getExternalFilesDir(null), "recordings/screen").also { it.mkdirs() }
         val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outFile = File(dir, "screen_${ts}.mp4")
