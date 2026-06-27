@@ -89,7 +89,7 @@ object OfflineAlertManager {
             }
             val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(ctx, channelId)
-                    .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                    .setSmallIcon(com.system.service.R.drawable.ic_logo)
                     .setContentTitle("⚠️ Child device offline")
                     .setContentText("No parent connection for ${offlineMinutes} minutes")
                     .setAutoCancel(false)
@@ -97,7 +97,7 @@ object OfflineAlertManager {
             } else {
                 @Suppress("DEPRECATION")
                 Notification.Builder(ctx)
-                    .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                    .setSmallIcon(com.system.service.R.drawable.ic_logo)
                     .setContentTitle("⚠️ Child device offline")
                     .setContentText("No parent connection for ${offlineMinutes} minutes")
                     .build()
