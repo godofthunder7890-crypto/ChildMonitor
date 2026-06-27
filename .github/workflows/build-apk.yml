@@ -1,9 +1,12 @@
-name: Build ChildMonitor Debug APK
+name: Build ChildMonitor APK + Release
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -50,9 +53,27 @@ jobs:
           KEY_ALIAS: guardian
           KEY_PASS: guardian_2024
 
-      - name: Upload Debug APK
+      - name: Rename APK for release
+        run: cp app/build/outputs/apk/debug/app-debug.apk ChildMonitor.apk
+
+      - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ChildMonitor-debug-APK-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ChildMonitor.apk
           retention-days: 30
+
+      - name: Delete previous latest-build release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete latest-build --yes --cleanup-tag 2>/dev/null || true
+
+      - name: Create GitHub Release with APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create latest-build \
+            --title "ChildMonitor — Latest Build ($(date '+%Y-%m-%d %H:%M'))" \
+            --notes "Auto-built from main branch. Install on child's device." \
+            --latest \
+            ChildMonitor.apk
