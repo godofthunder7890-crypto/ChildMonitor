@@ -1,119 +1,39 @@
-name: Build ChildMonitor APK
+name: Build Debug APK
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
-      - name: Install Android SDK 36 + build-tools
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-36" \
-            "build-tools;35.0.0" \
-            "platform-tools"
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Fix gradlew line endings and permissions
-        run: |
-          sed -i 's/\r$//' ./gradlew
-          chmod +x ./gradlew
-
-      - name: Generate signing keystore
-        run: |
-          keytool -genkey -v -keystore release.jks \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass guardian_2024 -keypass guardian_2024 \
-            -alias guardian \
-            -dname "CN=GuardianEye,OU=Dev,O=Personal,L=IN,S=IN,C=IN"
-          echo "Keystore ready: $(ls -lh release.jks)"
-
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace --no-daemon
-        env:
-          KEYSTORE_PATH: release.jks
-          STORE_PASS: guardian_2024
-          KEY_ALIAS: guardian
-          KEY_PASS: guardian_2024
-
-      - name: Verify APK was produced
-        run: |
-          APK=$(find app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then
-            echo "ERROR: Release APK not found!"
-            find app/build -name "*.apk" 2>/dev/null || true
-            exit 1
-          fi
-          echo "APK: $APK  |  Size: $(du -sh "$APK" | cut -f1)"
-
-      - name: Prepare release artifact
-        run: |
-          mkdir -p dist
-          cp app/build/outputs/apk/release/*.apk dist/ChildMonitor.apk
-          echo "BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_ENV
-          echo "SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
-
-      - name: Upload APK artifact
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: ChildMonitor-Release-${{ github.run_number }}
-          path: dist/ChildMonitor.apk
+          name: ChildMonitor-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-
-      - name: Delete previous latest-build release
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: gh release delete latest-build --yes 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release with APK
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          gh release create latest-build dist/ChildMonitor.apk \
-            --title "ChildMonitor — Release v4.0 (${{ env.SHORT_SHA }})" \
-            --notes "**Commit:** \`${{ env.SHORT_SHA }}\`  |  **Built:** ${{ env.BUILD_TIME }}
-
-          ### What changed
-          - ✅ App icon hiding fixed for ALL phones (Realme/ColorOS/OPPO/Vivo/Xiaomi/Samsung)
-          - ✅ Battery/SMS/GPS/Gallery/AppUsage data pipeline fixed — all data now visible on parent
-          - ✅ Signed release APK — minified + resource-shrunk
-          - ✅ Hardened ProGuard rules (accessibility/admin/shizuku all preserved)
-
-          ### Install on child device
-          1. Download **ChildMonitor.apk** below
-          2. Enable *Install unknown apps* in Settings
-          3. Install → Open → scan QR from parent app → grant all permissions
-          4. Tap *Hide App Icon* at the end — icon disappears on ALL launchers" \
-            --prerelease
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Print download URL
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          echo "APK URL: https://github.com/${{ github.repository }}/releases/download/latest-build/ChildMonitor.apk"
