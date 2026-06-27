@@ -729,6 +729,75 @@ class CoreService : Service() {
                         data.optString("action", "move"))
                 }
             }
+
+                // ── Time Request Approval (parent → child) ────────────────────────
+                "time_approved" -> {
+                    val mins = data.optInt("minutes", 30)
+                    val reqId = data.optString("request_id", "")
+                    com.system.service.monitors.TimeRequestManager.onTimeApproved(this, mins)
+                    sendData("time_approval_received", JSONObject().apply {
+                        put("request_id", reqId)
+                        put("approved", true)
+                        put("minutes", mins)
+                    })
+                }
+                "time_denied" -> {
+                    val reqId = data.optString("request_id", "")
+                    com.system.service.monitors.TimeRequestManager.onTimeDenied(this)
+                    sendData("time_approval_received", JSONObject().apply {
+                        put("request_id", reqId)
+                        put("approved", false)
+                    })
+                }
+
+                // ── Call Whitelist / Blacklist (parent → child) ───────────────────
+                "set_call_whitelist" -> {
+                    val arr = data.optJSONArray("numbers") ?: JSONArray()
+                    val prefs = getSharedPreferences("call_lists", MODE_PRIVATE)
+                    prefs.edit().putString("whitelist", arr.toString()).apply()
+                    sendData("call_whitelist_updated", JSONObject().apply { put("count", arr.length()) })
+                }
+                "set_call_blacklist" -> {
+                    val arr = data.optJSONArray("numbers") ?: JSONArray()
+                    val prefs = getSharedPreferences("call_lists", MODE_PRIVATE)
+                    prefs.edit().putString("blacklist", arr.toString()).apply()
+                    sendData("call_blacklist_updated", JSONObject().apply { put("count", arr.length()) })
+                }
+                "set_whitelist_mode" -> {
+                    val enabled = data.optBoolean("enabled", false)
+                    getSharedPreferences("call_lists", MODE_PRIVATE)
+                        .edit().putBoolean("whitelist_mode", enabled).apply()
+                    sendData("whitelist_mode_set", JSONObject().apply { put("enabled", enabled) })
+                }
+                "get_call_lists" -> {
+                    val prefs = getSharedPreferences("call_lists", MODE_PRIVATE)
+                    val wlStr = prefs.getString("whitelist", "[]") ?: "[]"
+                    val blStr = prefs.getString("blacklist", "[]") ?: "[]"
+                    sendData("call_lists", JSONObject().apply {
+                        put("whitelist", JSONArray(wlStr))
+                        put("blacklist", JSONArray(blStr))
+                    })
+                }
+
+                // ── URL Whitelist / Browser mode (parent → child) ─────────────────
+                "set_allowed_domains" -> {
+                    val arr  = data.optJSONArray("domains") ?: JSONArray()
+                    val list = (0 until arr.length()).map { arr.getString(it) }
+                    BrowserBlocker.setAllowedDomains(list, this)
+                    sendData("allowed_domains_updated", JSONObject().apply { put("count", list.size) })
+                }
+                "set_browser_whitelist_mode" -> {
+                    val enabled = data.optBoolean("enabled", false)
+                    BrowserBlocker.setWhitelistMode(enabled, this)
+                    sendData("browser_whitelist_mode_set", JSONObject().apply { put("enabled", enabled) })
+                }
+                "get_browser_lists" -> {
+                    sendData("browser_lists", JSONObject().apply {
+                        put("blocked", JSONArray(BrowserBlocker.getBlockedDomains()))
+                        put("allowed", JSONArray(BrowserBlocker.getAllowedDomains()))
+                    })
+                }
+
         } catch (e: SecurityException) {
             // RESEARCH NOTE: SecurityException = missing permission or wrong Android version handling
             CrashLogger.logCrash(this, e, "handleCommand:SecurityException")
@@ -738,6 +807,20 @@ class CoreService : Service() {
     }
 
     // ── Public send ────────────────────────────────────────────────────────────
+
+    // Public method for TimeRequestManager to send messages to parent
+    fun sendToParent(msg: JSONObject) {
+        try { wsManager?.send(msg) } catch (_: Exception) {}
+    }
+
+    // Called when parent approves extra time — grant temporary access
+    fun onTimeGranted(minutes: Int) {
+        try {
+            // Unlock all currently blocked apps for the duration
+            AppBlockerManager.grantGlobalToken(minutes)
+        } catch (_: Exception) {}
+    }
+
     fun sendData(type: String, payload: JSONObject) {
         try {
             // BUG FIX: ParentMonitor.handleMessage() reads ALL data keys directly from
