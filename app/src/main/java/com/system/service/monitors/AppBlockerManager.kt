@@ -30,6 +30,19 @@ object AppBlockerManager {
         tokenExpiry[pkg] = System.currentTimeMillis() + (minutes * 60_000L)
     }
 
+    /** Grant temporary access to ALL currently-blocked apps (parent-approved screen time) */
+    @Volatile private var globalTokenExpiry = 0L
+    fun grantGlobalToken(minutes: Int) {
+        globalTokenExpiry = System.currentTimeMillis() + (minutes * 60_000L)
+        // Also set per-app token for every currently blocked app
+        blockedApps.forEach { pkg ->
+            tokenExpiry[pkg] = globalTokenExpiry
+        }
+    }
+    fun isGlobalTokenActive(): Boolean {
+        return System.currentTimeMillis() < globalTokenExpiry
+    }
+
     private fun isTokenActive(pkg: String): Boolean {
         val exp = tokenExpiry[pkg] ?: return false
         return if (System.currentTimeMillis() < exp) true
@@ -113,12 +126,14 @@ object AppBlockerManager {
     }
 
     fun isBlocked(pkg: String): Boolean {
-        if (isTokenActive(pkg)) return false  // Feature F3: token overrides block
+        if (isGlobalTokenActive()) return false  // Parent-approved global time grant
+        if (isTokenActive(pkg)) return false     // Feature F3: per-app token overrides block
         return blockedApps.contains(pkg)
     }
 
     fun isTimeLimitExceeded(pkg: String): Boolean {
-        if (isTokenActive(pkg)) return false  // Feature F3: token overrides time limit
+        if (isGlobalTokenActive()) return false  // Parent-approved global time grant
+        if (isTokenActive(pkg)) return false     // Feature F3: token overrides time limit
         val limit = timeLimits[pkg] ?: return false
         val usedMs = todayUsage[pkg] ?: 0L
         return (usedMs / 60_000L) >= limit
