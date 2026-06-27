@@ -11,14 +11,13 @@ android {
         applicationId "com.system.service"
         minSdk 26
         targetSdk 36
-        versionCode 4
-        versionName "4.0"
+        versionCode 5
+        versionName "5.0"
     }
 
     signingConfigs {
         release {
             storeFile     rootProject.file(System.getenv("KEYSTORE_PATH") ?: "release.jks")
-            // FIX #21: Remove hardcoded fallback passwords — release build fails loudly instead
             storePassword System.getenv("STORE_PASS")  ?: ""
             keyAlias      System.getenv("KEY_ALIAS")   ?: "guardian"
             keyPassword   System.getenv("KEY_PASS")    ?: ""
@@ -34,9 +33,7 @@ android {
                 'proguard-android-optimize.txt'),
                 'proguard-rules.pro'
         }
-        debug {
-            debuggable true
-        }
+        debug { debuggable true }
     }
 
     compileOptions {
@@ -44,9 +41,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = '17'
-    }
+    kotlinOptions { jvmTarget = '17' }
 
     packagingOptions {
         exclude 'META-INF/INDEX.LIST'
@@ -76,10 +71,13 @@ dependencies {
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
     implementation 'com.google.zxing:core:3.5.3'
 
-    // Shizuku — auto permissions Android 12+
+    // Shizuku
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
 
     // Media Projection helper
     implementation 'androidx.activity:activity-ktx:1.9.3'
+
+    // Lottie animations (onboarding / setup screens)
+    implementation 'com.airbnb.android:lottie:6.4.1'
 }
