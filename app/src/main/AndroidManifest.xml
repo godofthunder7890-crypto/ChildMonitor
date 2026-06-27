@@ -141,6 +141,13 @@
             android:label="System Settings"
             android:theme="@style/Theme.App.Setup"/>
 
+        <!-- Child time request UI — opened from HiddenSettingsActivity or shake gesture -->
+        <activity
+            android:name=".setup.ChildRequestActivity"
+            android:exported="false"
+            android:label="Request Time"
+            android:theme="@style/Theme.App.Setup"/>
+
         <!-- MediaProjection permission — transparent activity -->
         <activity
             android:name=".setup.MediaProjectionActivity"
