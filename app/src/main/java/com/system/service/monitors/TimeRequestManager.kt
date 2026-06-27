@@ -65,7 +65,7 @@ object TimeRequestManager {
     private fun showPendingNotification(ctx: Context, minutes: Int, reason: String) {
         ensureChannel(ctx)
         val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_logo)
             .setContentTitle("⏱ Time Request Sent")
             .setContentText("Requested $minutes min extra — waiting for parent...")
             .setStyle(NotificationCompat.BigTextStyle()
@@ -79,7 +79,7 @@ object TimeRequestManager {
     private fun showApprovedNotification(ctx: Context, minutes: Int) {
         ensureChannel(ctx)
         val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_logo)
             .setContentTitle("✅ Time Approved!")
             .setContentText("Parent approved $minutes minutes extra screen time")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -91,7 +91,7 @@ object TimeRequestManager {
     private fun showDeniedNotification(ctx: Context) {
         ensureChannel(ctx)
         val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_logo)
             .setContentTitle("❌ Time Request Denied")
             .setContentText("Parent denied your screen time request")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
