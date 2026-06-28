@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "90549798224",
+    "project_id": "guardian-eyee",
+    "storage_bucket": "guardian-eyee.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:90549798224:android:f44e0f5da84dc913b1d855",
+        "android_client_info": {
+          "package_name": "com.system.service"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2Ml2PzfzMMBLQ1wLHW404QB0xHouyeho"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
