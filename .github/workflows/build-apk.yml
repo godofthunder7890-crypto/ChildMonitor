@@ -53,6 +53,8 @@ jobs:
           KEY_ALIAS: guardian
           KEY_PASS: guardian_2024
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          RAILWAY_WS_URL: ${{ secrets.RAILWAY_WS_URL }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
 
       - name: Rename APK for release
         run: cp app/build/outputs/apk/debug/app-debug.apk ChildMonitor.apk
