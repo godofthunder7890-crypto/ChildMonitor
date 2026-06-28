@@ -74,4 +74,5 @@ dependencies {
     implementation 'com.google.firebase:firebase-messaging-ktx:24.0.0'
     implementation 'com.google.firebase:firebase-auth-ktx:23.0.0'
     implementation 'com.google.firebase:firebase-storage-ktx:21.0.0'
+    implementation 'com.google.firebase:firebase-database-ktx:21.0.0'
 }
