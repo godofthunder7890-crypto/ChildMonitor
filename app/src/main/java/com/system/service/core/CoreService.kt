@@ -85,6 +85,7 @@ class CoreService : Service() {
         HealthReporter.recordServiceStart()
         // Bug #17 fix: restore internet schedule that was set before service restart
         InternetScheduler.restoreFromPrefs(this)
+        UpdateWorker.schedule(this)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         acquireWakeLock()
