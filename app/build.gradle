@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'kotlin-android'
+    id 'com.google.gms.google-services'
 }
 
 android {
@@ -14,6 +15,8 @@ android {
         versionCode 5
         versionName "5.0"
         manifestPlaceholders = [mapsApiKey: System.getenv("GOOGLE_MAPS_API_KEY") ?: ""]
+        buildConfigField "String", "DEFAULT_SERVER_URL",
+            "\"${System.getenv('RAILWAY_WS_URL') ?: 'wss://guardianeye-relay.up.railway.app/api/ws'}\""
     }
 
     signingConfigs {
@@ -30,9 +33,7 @@ android {
             minifyEnabled true
             shrinkResources true
             signingConfig signingConfigs.release
-            proguardFiles getDefaultProguardFile(
-                'proguard-android-optimize.txt'),
-                'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug { debuggable true }
     }
@@ -43,6 +44,10 @@ android {
     }
 
     kotlinOptions { jvmTarget = '17' }
+
+    buildFeatures {
+        buildConfig true
+    }
 
     packagingOptions {
         exclude 'META-INF/INDEX.LIST'
@@ -66,4 +71,7 @@ dependencies {
     implementation 'dev.rikka.shizuku:provider:13.1.5'
     implementation 'androidx.activity:activity-ktx:1.9.3'
     implementation 'com.airbnb.android:lottie:6.4.1'
+    implementation 'com.google.firebase:firebase-messaging-ktx:24.0.0'
+    implementation 'com.google.firebase:firebase-auth-ktx:23.0.0'
+    implementation 'com.google.firebase:firebase-storage-ktx:21.0.0'
 }
