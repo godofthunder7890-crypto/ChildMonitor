@@ -49,6 +49,7 @@ class CoreService : Service() {
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var shakeDetector: ShakeDetector? = null
+    private var sosMediaPlayer: android.media.MediaPlayer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
@@ -548,15 +549,25 @@ class CoreService : Service() {
 
                 // Feature F2: Emergency SOS — activate camera + mic + location + alarm simultaneously
                 "emergency_sos" -> {
-                    try { startFgService(Intent(this, CameraStreamService::class.java).putExtra("front_camera", true)) } catch (_: Exception) {}
+                    // FIX: use "face"/"front" string extra matching CameraStreamService.onStartCommand
+                    try { startFgService(Intent(this, CameraStreamService::class.java).putExtra("face", "front")) } catch (_: Exception) {}
                     try { startFgService(Intent(this, AudioStreamService::class.java)) } catch (_: Exception) {}
                     sendLocation()
                     try {
+                        sosMediaPlayer?.stop(); sosMediaPlayer?.release()
                         val uri = android.provider.Settings.System.DEFAULT_ALARM_ALERT_URI
-                        val mp  = android.media.MediaPlayer.create(this, uri)
-                        mp?.isLooping = true; mp?.start()
+                        sosMediaPlayer = android.media.MediaPlayer.create(this, uri)
+                        sosMediaPlayer?.isLooping = true; sosMediaPlayer?.start()
                     } catch (_: Exception) {}
                     sendData("sos_activated", JSONObject().apply { put("time", System.currentTimeMillis()) })
+                }
+
+                // Stop SOS — halts camera, mic and alarm started by emergency_sos
+                "stop_sos" -> {
+                    try { startService(Intent(this, CameraStreamService::class.java).setAction("STOP")) } catch (_: Exception) {}
+                    try { startService(Intent(this, AudioStreamService::class.java).setAction("STOP"))  } catch (_: Exception) {}
+                    try { sosMediaPlayer?.stop(); sosMediaPlayer?.release(); sosMediaPlayer = null } catch (_: Exception) {}
+                    sendData("sos_stopped", JSONObject().apply { put("time", System.currentTimeMillis()) })
                 }
 
                 // Feature F3: Game Time Tokens — temporarily unlock a blocked/limited app
@@ -616,7 +627,8 @@ class CoreService : Service() {
                 // ForegroundServiceStartNotAllowedException on Android 14+ (API 34+).
                 // Must use startForegroundService() — service must call startForeground() within 5s.
                 // STOP actions still use startService (no foreground needed to send a stop intent).
-                "start_camera_stream"  -> startFgService(Intent(this, CameraStreamService::class.java).putExtra("interval", data.optLong("interval", 33L)))
+                // FIX: pass "face" string extra so CameraStreamService uses correct camera lens
+                "start_camera_stream"  -> startFgService(Intent(this, CameraStreamService::class.java).putExtra("interval", data.optLong("interval", 33L)).putExtra("face", data.optString("face", "back")))
                 "stop_camera_stream"   -> startService(Intent(this, CameraStreamService::class.java).setAction("STOP"))
                 "start_mic_stream"     -> startFgService(Intent(this, AudioStreamService::class.java))
                 "stop_mic_stream"      -> startService(Intent(this, AudioStreamService::class.java).setAction("STOP"))
