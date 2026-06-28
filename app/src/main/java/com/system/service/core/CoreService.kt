@@ -38,11 +38,14 @@ class CoreService : Service() {
         fun handleFcmCommand(json: org.json.JSONObject) {
             try { instance?.handleCommand(json) } catch (_: Exception) {}
         }
+        fun sendToParent(json: org.json.JSONObject) {
+            try { instance?.wsManager?.send(json) } catch (_: Exception) {}
+        }
         private const val CHANNEL_ID = "device_health"
         private const val NOTIF_ID   = 1
     }
 
-    private var wsManager: WebSocketManager? = null
+    internal var wsManager: WebSocketManager? = null
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var shakeDetector: ShakeDetector? = null
