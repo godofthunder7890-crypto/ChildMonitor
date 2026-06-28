@@ -43,7 +43,10 @@ object GeofenceMonitor {
             }
         }
         try {
-            fusedClient?.requestLocationUpdates(req, locationCallback!!, android.os.Looper.getMainLooper())
+            // BUG FIX: locationCallback!! can NPE if stopTracking() races with startTracking().
+            // Capture into local val first; return early if already stopped.
+            val cb = locationCallback ?: return
+            fusedClient?.requestLocationUpdates(req, cb, android.os.Looper.getMainLooper())
         } catch (_: SecurityException) {}
     }
 
