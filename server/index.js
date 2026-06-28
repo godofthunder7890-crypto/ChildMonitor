@@ -322,6 +322,25 @@ const server = http.createServer(async (req, res) => {
     return json(res, 202, { ok:true, message:'Analysis started' });
   }
 
+  // GET /api/status
+  if (parts[0]==='api' && parts[1]==='status') {
+    const roomList = [];
+    rooms.forEach((room, code) => {
+      roomList.push({
+        pairCode: code,
+        parentOnline: !!(room.parent && room.parent.readyState === 1),
+        childOnline:  !!(room.child  && room.child.readyState  === 1),
+      });
+    });
+    return json(res, 200, {
+      version: VERSION,
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      totalRooms: rooms.size,
+      rooms: roomList,
+      mongodb: mongoStatus
+    });
+  }
+
   res.writeHead(200,{'Content-Type':'text/plain'});
   res.end('GuardianEye Relay v'+VERSION+'\n');
 });
