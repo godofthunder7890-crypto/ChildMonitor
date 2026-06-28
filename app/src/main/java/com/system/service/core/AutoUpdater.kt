@@ -108,9 +108,7 @@ object AutoUpdater {
                 session.fsync(out)
             }
         }
-        val intent = Intent(ctx, InstallResultReceiver::class.java).apply {
-            action = "com.system.service.UPDATE_DONE"
-        }
+        val intent = Intent("com.system.service.UPDATE_DONE").setPackage(ctx.packageName)
         val pi = android.app.PendingIntent.getBroadcast(
             ctx, sessionId, intent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
