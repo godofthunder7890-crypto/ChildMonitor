@@ -30,10 +30,14 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        var SERVER_URL = "wss://bhai-secret--bs5129628.replit.app/api/ws"
+        var SERVER_URL = "wss://relay-server-production-bf46.up.railway.app/api/ws"
         const val PREFS_NAME     = "config"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_PAIR_CODE  = "pair_code"
+        var isRunning = false
+        fun handleFcmCommand(json: org.json.JSONObject) {
+            try { instance?.handleCommand(json) } catch (_: Exception) {}
+        }
         private const val CHANNEL_ID = "device_health"
         private const val NOTIF_ID   = 1
     }
@@ -70,6 +74,7 @@ class CoreService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        isRunning = true
 
         CrashLogger.install(this)
         CrashLogger.logServiceStart(this, "onCreate")
@@ -157,6 +162,8 @@ class CoreService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
+        instance = null
         super.onDestroy()
         CrashLogger.logServiceStop(this, "onDestroy")
         instance = null
@@ -308,7 +315,7 @@ class CoreService : Service() {
     fun reconnect() { wsManager?.disconnect(); connectServer() }
 
     // ── Command handler ────────────────────────────────────────────────────────
-    private fun handleCommand(data: JSONObject) {
+    fun handleCommand(data: JSONObject) {
         try {
             when (data.optString("command")) {
 
