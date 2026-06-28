@@ -8,7 +8,6 @@ import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.system.service.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -125,7 +124,7 @@ object AutoUpdater {
             )
         }
         val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("ChildMonitor Update")
             .setContentText(msg)
             .setOngoing(false)
