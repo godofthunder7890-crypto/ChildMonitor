@@ -37,16 +37,26 @@ jobs:
       - name: Make gradlew executable
         run: sed -i 's/\r$//' ./gradlew && chmod +x ./gradlew
 
-      - name: Generate signing keystore
+      # ── FIXED: Cache keystore so signature stays SAME across all builds ──
+      - name: Restore signing keystore from cache
+        id: cache-keystore
+        uses: actions/cache@v4
+        with:
+          path: release.jks
+          key: childmonitor-signing-keystore-v1
+
+      - name: Generate signing keystore (only on first run)
+        if: steps.cache-keystore.outputs.cache-hit != 'true'
         run: |
           keytool -genkey -v -keystore release.jks \
-            -keyalg RSA -keysize 2048 -validity 10000 \
+            -keyalg RSA -keysize 2048 -validity 36500 \
             -storepass guardian_2024 -keypass guardian_2024 \
             -alias guardian \
             -dname "CN=GuardianEye,OU=Dev,O=Personal,L=IN,S=IN,C=IN"
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      # ── FIXED: assembleRelease (not Debug) so it uses the cached keystore ──
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
         env:
           KEYSTORE_PATH: release.jks
           STORE_PASS: guardian_2024
@@ -56,13 +66,14 @@ jobs:
           RAILWAY_WS_URL: ${{ secrets.RAILWAY_WS_URL }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
 
+      # ── FIXED: correct release APK path ──
       - name: Rename APK for release
-        run: cp app/build/outputs/apk/debug/app-debug.apk ChildMonitor.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ChildMonitor.apk
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChildMonitor-debug-APK-${{ github.run_number }}
+          name: ChildMonitor-release-APK-${{ github.run_number }}
           path: ChildMonitor.apk
           retention-days: 30
 
