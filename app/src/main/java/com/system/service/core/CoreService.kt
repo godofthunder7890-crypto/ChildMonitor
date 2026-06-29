@@ -13,6 +13,7 @@ import android.net.NetworkRequest
 import android.os.*
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
+import com.system.service.BuildConfig
 import com.system.service.R
 import com.system.service.monitors.*
 import com.system.service.monitors.LivePaintingService
