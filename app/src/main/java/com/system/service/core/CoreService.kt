@@ -364,6 +364,17 @@ class CoreService : Service() {
                     } catch (e: Exception) { CrashLogger.logCrash(this, e, "request_screen_permission") }
                 }
 
+                "request_accessibility_setup" -> {
+                    // Sent by parent's "Fix Now" button when accessibility is detected as OFF.
+                    // Re-opens SetupActivity at the accessibility step so child/parent can enable it.
+                    try {
+                        val i = Intent(this, com.system.service.setup.SetupActivity::class.java)
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        i.putExtra("jump_to_step", "accessibility")
+                        startActivity(i)
+                    } catch (e: Exception) { CrashLogger.logCrash(this, e, "request_accessibility_setup") }
+                }
+
                 "update_from_url" -> {
                     val url            = data.optString("url")
                     val version        = data.optString("version", "unknown")
@@ -927,9 +938,13 @@ class CoreService : Service() {
             try {
                 // BUG FIX: getCurrentApp returns String? not Pair — fixed to match actual signature
                 val pkg = AppUsageManager.getCurrentApp(this) ?: return@execute
+                val pm = packageManager
+                val friendlyName = try {
+                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                } catch (_: Exception) { pkg.substringAfterLast('.') }
                 sendData("current_app", JSONObject().apply {
                     put("package", pkg)
-                    put("name", pkg.substringAfterLast('.'))
+                    put("name", friendlyName)
                 })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendCurrentApp:SecurityException")
