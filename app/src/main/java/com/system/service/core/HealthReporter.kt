@@ -61,8 +61,11 @@ object HealthReporter {
             put("notification_access",        isNotificationAccessGranted(context))
             put("foreground_service_running", CoreService.instance != null)
             put("heartbeat_at",               System.currentTimeMillis())
-            put("screen_width",               android.content.res.Resources.getSystem().displayMetrics.widthPixels)
-            put("screen_height",              android.content.res.Resources.getSystem().displayMetrics.heightPixels)
+            // BUG FIX: Resources.getSystem() returns a global Resources object NOT tied to
+            // any display — on multi-display or foldable devices it returns wrong dimensions.
+            // context.resources.displayMetrics reflects the actual window/display configuration.
+            put("screen_width",               context.resources.displayMetrics.widthPixels)
+            put("screen_height",              context.resources.displayMetrics.heightPixels)
         }
     }
 
