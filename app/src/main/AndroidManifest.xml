@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ── Network ─────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -43,8 +44,7 @@
 
     <!-- ── App usage stats ─────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions"
-        xmlns:tools="http://schemas.android.com/tools"/>
+        tools:ignore="ProtectedPermissions"/>
 
     <!-- ── Foreground service (RESEARCH: All types must be declared here     -->
     <!--    AND passed to startForeground() on Android 14+)                  -->
@@ -54,6 +54,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 
     <!-- ── Kill-proof / Doze-safe ──────────────────────────────────────────── -->
     <!-- RESEARCH (Doze): RECEIVE_BOOT_COMPLETED → restart after reboot       -->
@@ -81,6 +82,13 @@
 
     <!-- ── APK install ─────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
+    <!-- ── Package visibility (Android 11+) ─────────────────────────────────── -->
+    <!-- Without this, getInstalledApplications() returns a filtered list on     -->
+    <!-- Android 11+ — app-list sent to parent is incomplete (FlashGet Kids has  -->
+    <!-- this permission for the same reason)                                     -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission"/>
 
     <!-- ── Shizuku ─────────────────────────────────────────────────────────── -->
     <queries>
@@ -188,12 +196,20 @@
             android:stopWithTask="false"
             android:foregroundServiceType="mediaProjection"/>
 
-        <!-- Live Painting overlay service -->
+        <!-- Live Painting overlay service — foregroundServiceType="specialUse" because
+             this service draws an overlay on the child's screen, which does not map to
+             any standard type (camera/mic/location/dataSync). specialUse is the correct
+             type for screen-overlay drawing. Requires FOREGROUND_SERVICE_SPECIAL_USE
+             permission and the property tag below for Play Store compliance. -->
         <service
             android:name=".monitors.LivePaintingService"
             android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="dataSync"/>
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="overlay_drawing"/>
+        </service>
 
         <!--
             Boot receiver — RESEARCH (Doze / OEM):
@@ -211,6 +227,14 @@
 
         <!-- Watchdog alarm receiver — RESEARCH (Doze): fires with setExactAndAllowWhileIdle -->
         <receiver android:name=".core.WatchdogReceiver" android:exported="false"/>
+
+        <!-- JobScheduler restart service — Layer 3 of 3 restart-safety net.
+             Not subject to OEM alarm restrictions (Realme/ColorOS ~15min delay).
+             setPersisted(true) means this job survives reboots automatically. -->
+        <service
+            android:name=".core.RestartJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false"/>
 
         <!-- Notification listener — RESEARCH (Notification Listener): must be exported -->
         <service
