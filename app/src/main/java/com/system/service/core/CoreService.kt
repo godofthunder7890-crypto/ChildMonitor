@@ -103,6 +103,7 @@ class CoreService : Service() {
         connectServer()
         WatchdogReceiver.schedule(this)
         MonitorWorker.enqueue(this)
+        RestartJobService.schedule(this)   // Layer 3: JobScheduler restart safety net
         shakeDetector = ShakeDetector(this).also { it.start() }
         PermissionWatcher.start(this)
         OfflineAlertManager.start(this)
