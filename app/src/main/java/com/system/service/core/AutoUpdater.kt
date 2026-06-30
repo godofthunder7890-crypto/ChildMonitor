@@ -39,6 +39,23 @@ object AutoUpdater {
 
             showNotification(ctx, "Update found — downloading…")
             val apkFile = downloadApk(ctx, apkUrl) ?: return@withContext
+            // BUG FIX: APK was installed without any integrity check — a MITM or
+            // a corrupted download could silently install a bad APK. Verify SHA-256
+            // from the release JSON before passing to PackageInstaller.
+            val expectedSha256 = latest.optString("sha256", "")
+            if (expectedSha256.isNotBlank()) {
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                val actual = apkFile.inputStream().buffered(65536).use { s ->
+                    val buf = ByteArray(65536); var r: Int
+                    while (s.read(buf).also { r = it } != -1) digest.update(buf, 0, r)
+                    digest.digest().joinToString("") { "%02x".format(it) }
+                }
+                if (!actual.equals(expectedSha256.trim(), ignoreCase = true)) {
+                    apkFile.delete()
+                    Log.e(TAG, "SHA-256 mismatch — aborting update (expected=$expectedSha256 actual=$actual)")
+                    return@withContext
+                }
+            }
             showNotification(ctx, "Installing update…")
             installApk(ctx, apkFile)
         } catch (e: Exception) {
