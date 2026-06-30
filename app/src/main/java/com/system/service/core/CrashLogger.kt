@@ -23,7 +23,23 @@ object CrashLogger {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try { logCrash(appCtx, throwable, thread.name) } catch (_: Exception) {}
-            defaultHandler?.uncaughtException(thread, throwable)
+            try {
+                val intent = android.content.Intent(appCtx,
+                    com.system.service.setup.CrashActivity::class.java).apply {
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                            android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    putExtra(com.system.service.setup.CrashActivity.EXTRA_ERROR,
+                        throwable.message ?: "Unknown error")
+                    putExtra(com.system.service.setup.CrashActivity.EXTRA_STACK,
+                        throwable.stackTraceToString().take(3000))
+                    putExtra(com.system.service.setup.CrashActivity.EXTRA_DEVICE,
+                        DeviceHelper.getSummary(appCtx))
+                }
+                appCtx.startActivity(intent)
+                Thread.sleep(300)
+            } catch (_: Exception) {
+                defaultHandler?.uncaughtException(thread, throwable)
+            }
         }
     }
 
