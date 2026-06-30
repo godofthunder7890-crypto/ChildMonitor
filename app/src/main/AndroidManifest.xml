@@ -143,6 +143,14 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Crash recovery screen — shows instead of "App has stopped" dialog -->
+        <activity
+            android:name=".setup.CrashActivity"
+            android:exported="false"
+            android:label="Error"
+            android:theme="@style/Theme.App.Crash"
+            android:excludeFromRecents="true"/>
+
         <!-- Hidden settings — opened by shaking device 5 times -->
         <activity
             android:name=".setup.HiddenSettingsActivity"
