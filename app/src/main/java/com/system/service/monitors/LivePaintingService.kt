@@ -3,6 +3,7 @@ package com.system.service.monitors
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.*
 import android.os.*
 import android.view.*
@@ -33,7 +34,16 @@ class LivePaintingService : Service() {
         super.onCreate()
         instance = this
         createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification())
+        // BUG FIX: startForeground() without a type parameter throws
+        // ForegroundServiceStartNotAllowedException on Android 14+ (UPSIDE_DOWN_CAKE)
+        // when the manifest declares a foregroundServiceType. Must pass the matching
+        // ServiceInfo constant so the OS can validate and grant the type.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, buildNotification())
+        }
         showOverlay()
     }
 
