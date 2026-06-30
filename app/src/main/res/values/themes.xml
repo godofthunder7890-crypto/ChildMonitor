@@ -13,4 +13,12 @@
     <style name="Theme.App.Setup" parent="Theme.App">
         <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
     </style>
+
+    <!-- Crash screen theme — always light so stack trace is readable -->
+    <style name="Theme.App.Crash" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="android:windowBackground">@color/bg_page</item>
+        <item name="android:statusBarColor">@color/bg_page</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
 </resources>
