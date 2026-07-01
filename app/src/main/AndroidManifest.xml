@@ -330,7 +330,13 @@
             android:name=".VoiceOfChildActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustPan"/>
+            android:windowSoftInputMode="adjustResize"/>
+
+        <!-- Foreground download service for auto-update -->
+        <service
+            android:name=".core.DownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false"/>
 
     </application>
 </manifest>
