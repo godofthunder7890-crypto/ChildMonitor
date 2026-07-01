@@ -2,107 +2,112 @@ package com.system.service.core
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import okhttp3.OkHttpClient
 import java.io.File
 import java.io.FileInputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
 object AutoUpdater {
 
-    private const val TAG = "AutoUpdater"
-    private const val GITHUB_REPO = "godofthunder7890-crypto/ChildMonitor"
-    private const val CHANNEL_ID  = "auto_update"
-    private const val NOTIF_ID    = 9901
+    private const val TAG        = "AutoUpdater"
+    private const val CHANNEL_ID = "auto_update"
+    private const val NOTIF_ID   = 9901
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     suspend fun checkAndUpdate(ctx: Context) = withContext(Dispatchers.IO) {
         try {
-            val latest = fetchLatestRelease() ?: return@withContext
-            val latestCode = latest.optInt("version_code", -1)
-            val apkUrl     = latest.optString("apk_url", "")
-            if (latestCode <= 0 || apkUrl.isEmpty()) return@withContext
+            // 1. Fetch latest release via OkHttp + GitHub API (redirect-safe)
+            val release = VersionChecker.fetchLatest(httpClient) ?: return@withContext
 
-            val myCode = ctx.packageManager
-                .getPackageInfo(ctx.packageName, 0)
-                .let { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.longVersionCode.toInt() else @Suppress("DEPRECATION") it.versionCode }
+            // 2. Compare version codes
+            val myCode = ctx.packageManager.getPackageInfo(ctx.packageName, 0).let {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                    it.longVersionCode.toInt()
+                else
+                    @Suppress("DEPRECATION") it.versionCode
+            }
+            Log.d(TAG, "Local: $myCode  Remote: ${release.versionCode} (${release.version})")
+            if (release.versionCode <= myCode) return@withContext
 
-            Log.d(TAG, "Local: $myCode  Remote: $latestCode")
-            if (latestCode <= myCode) return@withContext
+            showNotification(ctx, "Update ${release.version} found — downloading…")
 
-            showNotification(ctx, "Update found — downloading…")
-            val apkFile = downloadApk(ctx, apkUrl) ?: return@withContext
-            // BUG FIX: APK was installed without any integrity check — a MITM or
-            // a corrupted download could silently install a bad APK. Verify SHA-256
-            // from the release JSON before passing to PackageInstaller.
-            val expectedSha256 = latest.optString("sha256", "")
-            if (expectedSha256.isNotBlank() && !SHA256Helper.verify(apkFile, expectedSha256)) {
-                apkFile.delete()
-                Log.e(TAG, "SHA-256 mismatch — aborting update")
+            // 3. Start DownloadService (foreground, shows live progress + speed/ETA)
+            //    DownloadService handles SHA-256 verification internally before broadcasting COMPLETE
+            val dlIntent = Intent(ctx, DownloadService::class.java).apply {
+                putExtra(DownloadService.EXTRA_URL,    release.downloadUrl)
+                putExtra(DownloadService.EXTRA_SHA256, release.sha256)
+            }
+            val apkFile = waitForDownload(ctx, dlIntent) ?: run {
+                showNotification(ctx, "Update download failed — will retry next launch")
                 return@withContext
             }
-            showNotification(ctx, "Installing update…")
+
+            // 4. Install the SHA-256-verified APK
+            showNotification(ctx, "Installing ${release.version}…")
             installApk(ctx, apkFile)
+
         } catch (e: Exception) {
             Log.e(TAG, "AutoUpdater error", e)
         }
     }
 
-    private fun fetchLatestRelease(): JSONObject? {
-        val url = URL("https://api.github.com/repos/$GITHUB_REPO/releases/latest")
-        val conn = url.openConnection() as HttpURLConnection
-        conn.setRequestProperty("Accept", "application/vnd.github+json")
-        conn.setRequestProperty("User-Agent", "ChildMonitor-Updater")
-        conn.connectTimeout = 15_000
-        conn.readTimeout    = 15_000
-        return try {
-            if (conn.responseCode != 200) return null
-            val body = conn.inputStream.bufferedReader().readText()
-            val rel  = JSONObject(body)
-            val tag  = rel.optString("tag_name", "")
-            val code = tag.replace(Regex("[^0-9]"), "").toIntOrNull() ?: return null
-            val assets = rel.optJSONArray("assets") ?: return null
-            var apkUrl = ""
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.optString("name").endsWith(".apk")) {
-                    apkUrl = a.optString("browser_download_url")
-                    break
+    /**
+     * Starts DownloadService and suspends until ACTION_COMPLETE or ACTION_ERROR is broadcast.
+     * Returns the downloaded File on success, null on failure or cancellation.
+     */
+    private suspend fun waitForDownload(ctx: Context, startIntent: Intent): File? =
+        suspendCancellableCoroutine { cont ->
+            var receiver: BroadcastReceiver? = null
+            receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    try { ctx.unregisterReceiver(this) } catch (_: Exception) {}
+                    receiver = null
+                    when (intent.action) {
+                        DownloadService.ACTION_COMPLETE -> {
+                            val path = intent.getStringExtra(DownloadService.EXTRA_FILE)
+                            cont.resume(if (path != null) File(path) else null)
+                        }
+                        DownloadService.ACTION_ERROR -> {
+                            Log.e(TAG, "Download error: ${intent.getStringExtra(DownloadService.EXTRA_ERROR)}")
+                            cont.resume(null)
+                        }
+                        else -> cont.resume(null)
+                    }
                 }
             }
-            if (apkUrl.isEmpty()) return null
-            JSONObject().apply {
-                put("version_code", code)
-                put("apk_url", apkUrl)
+            val filter = IntentFilter().apply {
+                addAction(DownloadService.ACTION_COMPLETE)
+                addAction(DownloadService.ACTION_ERROR)
             }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun downloadApk(ctx: Context, urlStr: String): File? {
-        val file = File(ctx.cacheDir, "update.apk")
-        val url  = URL(urlStr)
-        val conn = url.openConnection() as HttpURLConnection
-        conn.connectTimeout = 30_000
-        conn.readTimeout    = 120_000
-        return try {
-            if (conn.responseCode != 200) return null
-            conn.inputStream.use { input ->
-                file.outputStream().use { out -> input.copyTo(out) }
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ctx.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                ctx.registerReceiver(receiver, filter)
             }
-            file
-        } finally {
-            conn.disconnect()
+            ctx.startForegroundService(startIntent)
+            cont.invokeOnCancellation {
+                try { receiver?.let { ctx.unregisterReceiver(it) } } catch (_: Exception) {}
+            }
         }
-    }
 
     private fun installApk(ctx: Context, apk: File) {
         val installer = ctx.packageManager.packageInstaller
