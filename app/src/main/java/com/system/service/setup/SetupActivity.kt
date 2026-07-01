@@ -111,7 +111,7 @@ class SetupActivity : AppCompatActivity() {
         cbBatteryConfirm = findViewById(R.id.cbBatteryConfirm)
 
         // Honour "jump_to_step" extra sent by CoreService's request_accessibility_setup command
-        if (intent?.getStringExtra("jump_to_step") == "accessibility") {
+        if (intent.getStringExtra("jump_to_step") == "accessibility") {
             showStep(2)
             return
         }
@@ -122,9 +122,9 @@ class SetupActivity : AppCompatActivity() {
         showStep(0)
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent?.getStringExtra("jump_to_step") == "accessibility") {
+        if (intent.getStringExtra("jump_to_step") == "accessibility") {
             showStep(2)
         }
     }
