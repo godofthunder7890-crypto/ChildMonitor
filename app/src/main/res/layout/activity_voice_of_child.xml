@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#060612"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:background="#060612">
 
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp"
-        android:paddingTop="40dp">
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="40dp"
+        android:paddingBottom="12dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -27,38 +30,75 @@
             android:layout_height="wrap_content"
             android:text="Send message to parent"
             android:textSize="13sp"
-            android:textColor="#555577"
-            android:layout_marginBottom="28dp"/>
+            android:textColor="#555577"/>
+    </LinearLayout>
+
+    <!-- Message History -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="SENT MESSAGES"
+        android:textSize="10sp"
+        android:textColor="#00E5FF"
+        android:letterSpacing="0.15"
+        android:paddingStart="24dp"
+        android:layout_marginBottom="6dp"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvMessages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:clipToPadding="false"
+        android:overScrollMode="never"/>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1E1E3A"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="24dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="QUICK MESSAGES"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textColor="#00E5FF"
             android:letterSpacing="0.15"
-            android:layout_marginBottom="12dp"/>
+            android:layout_marginBottom="8dp"/>
 
         <LinearLayout
             android:id="@+id/quickMsgContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="24dp"/>
+            android:layout_marginBottom="16dp"/>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="CUSTOM MESSAGE"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textColor="#00E5FF"
             android:letterSpacing="0.15"
-            android:layout_marginBottom="12dp"/>
+            android:layout_marginBottom="8dp"/>
 
         <EditText
             android:id="@+id/etCustomMessage"
             android:layout_width="match_parent"
-            android:layout_height="80dp"
+            android:layout_height="72dp"
             android:hint="Apna message likho (max 100 chars)"
             android:inputType="textMultiLine"
             android:maxLength="100"
@@ -67,16 +107,17 @@
             android:background="#0A0A1E"
             android:padding="12dp"
             android:gravity="top"
-            android:layout_marginBottom="12dp"/>
+            android:layout_marginBottom="10dp"/>
 
         <Button
             android:id="@+id/btnSendMessage"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="50dp"
             android:text="SEND MESSAGE"
             android:textColor="#000000"
             android:backgroundTint="#00E5FF"
-            android:layout_marginBottom="12dp"/>
+            android:layout_marginBottom="8dp"
+            android:stateListAnimator="@null"/>
 
         <TextView
             android:id="@+id/tvSentStatus"
@@ -85,6 +126,6 @@
             android:gravity="center"
             android:textSize="13sp"
             android:visibility="gone"/>
-
     </LinearLayout>
-</ScrollView>
+
+</LinearLayout>
