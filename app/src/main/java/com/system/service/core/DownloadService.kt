@@ -136,8 +136,10 @@ class DownloadService : Service() {
         }
     }
 
+    // FIX: setPackage() required for RECEIVER_NOT_EXPORTED receivers on Android 14+
     private fun broadcastProgress(pct: Int, mbDone: Float, mbTotal: Float, speedKbs: Int, etaSecs: Int) =
         sendBroadcast(Intent(ACTION_PROGRESS).apply {
+            setPackage(packageName)
             putExtra(EXTRA_PERCENT,  pct)
             putExtra(EXTRA_MB_DONE,  mbDone)
             putExtra(EXTRA_MB_TOTAL, mbTotal)
@@ -146,10 +148,16 @@ class DownloadService : Service() {
         })
 
     private fun broadcastComplete(filePath: String) =
-        sendBroadcast(Intent(ACTION_COMPLETE).putExtra(EXTRA_FILE, filePath))
+        sendBroadcast(Intent(ACTION_COMPLETE).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_FILE, filePath)
+        })
 
     private fun broadcastError(msg: String) =
-        sendBroadcast(Intent(ACTION_ERROR).putExtra(EXTRA_ERROR, msg))
+        sendBroadcast(Intent(ACTION_ERROR).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_ERROR, msg)
+        })
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
