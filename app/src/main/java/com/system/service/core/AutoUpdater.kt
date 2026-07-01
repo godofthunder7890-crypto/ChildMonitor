@@ -43,18 +43,10 @@ object AutoUpdater {
             // a corrupted download could silently install a bad APK. Verify SHA-256
             // from the release JSON before passing to PackageInstaller.
             val expectedSha256 = latest.optString("sha256", "")
-            if (expectedSha256.isNotBlank()) {
-                val digest = java.security.MessageDigest.getInstance("SHA-256")
-                val actual = apkFile.inputStream().buffered(65536).use { s ->
-                    val buf = ByteArray(65536); var r: Int
-                    while (s.read(buf).also { r = it } != -1) digest.update(buf, 0, r)
-                    digest.digest().joinToString("") { "%02x".format(it) }
-                }
-                if (!actual.equals(expectedSha256.trim(), ignoreCase = true)) {
-                    apkFile.delete()
-                    Log.e(TAG, "SHA-256 mismatch — aborting update (expected=$expectedSha256 actual=$actual)")
-                    return@withContext
-                }
+            if (expectedSha256.isNotBlank() && !SHA256Helper.verify(apkFile, expectedSha256)) {
+                apkFile.delete()
+                Log.e(TAG, "SHA-256 mismatch — aborting update")
+                return@withContext
             }
             showNotification(ctx, "Installing update…")
             installApk(ctx, apkFile)
