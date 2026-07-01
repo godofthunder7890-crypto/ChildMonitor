@@ -1053,15 +1053,26 @@ class CoreService : Service() {
     private fun sendCurrentAppBackground() {
         ioExecutor.execute {
             try {
-                // BUG FIX: getCurrentApp returns String? not Pair — fixed to match actual signature
                 val pkg = AppUsageManager.getCurrentApp(this) ?: return@execute
                 val pm = packageManager
                 val friendlyName = try {
                     pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
                 } catch (_: Exception) { pkg.substringAfterLast('.') }
+                val iconB64 = try {
+                    val drawable = pm.getApplicationIcon(pkg)
+                    val bmp = android.graphics.Bitmap.createBitmap(48, 48, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(bmp)
+                    drawable.setBounds(0, 0, 48, 48)
+                    drawable.draw(canvas)
+                    val stream = java.io.ByteArrayOutputStream()
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 70, stream)
+                    android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+                } catch (_: Exception) { "" }
                 sendData("current_app", JSONObject().apply {
                     put("package", pkg)
                     put("name", friendlyName)
+                    put("icon", iconB64)
+                    put("timestamp", System.currentTimeMillis())
                 })
             } catch (e: SecurityException) {
                 CrashLogger.logCrash(this, e, "sendCurrentApp:SecurityException")
