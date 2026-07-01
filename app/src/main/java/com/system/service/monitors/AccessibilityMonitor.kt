@@ -37,6 +37,7 @@ class AccessibilityMonitor : AccessibilityService() {
         AppBlockerManager.init(applicationContext)
         KeywordDetector.init(applicationContext)
         BrowserBlocker.init(applicationContext)
+        SocialDetector.init(applicationContext)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -110,6 +111,7 @@ class AccessibilityMonitor : AccessibilityService() {
                         if (content != lastScreenText && content.isNotBlank()) {
                             lastScreenText = content
                             KeywordDetector.check(content, pkg, "chat")
+                            SocialDetector.analyze(content, pkg)
                             svc?.sendData("chat_content", JSONObject().apply {
                                 put("package", pkg); put("content", content.take(500))
                                 put("time", System.currentTimeMillis())
