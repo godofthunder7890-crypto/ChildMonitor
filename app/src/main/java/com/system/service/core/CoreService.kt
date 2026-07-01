@@ -21,6 +21,9 @@ import com.system.service.monitors.AmbientRecorder
 import com.system.service.monitors.BrowserBlocker
 import com.system.service.monitors.OfflineAlertManager
 import com.system.service.monitors.PermissionWatcher
+import com.system.service.monitors.SnapshotManager
+import com.system.service.monitors.SocialDetector
+import com.system.service.monitors.LocationHistoryManager
 import com.system.service.setup.MediaProjectionActivity
 import com.system.service.setup.ShakeDetector
 import org.json.JSONArray
@@ -100,6 +103,9 @@ class CoreService : Service() {
         AppBlockerManager.init(this)
         KeywordDetector.init(this)
         BrowserBlocker.init(this)
+        SocialDetector.init(this)
+        SnapshotManager.init(this)
+        LocationHistoryManager.init(this)
         connectServer()
         WatchdogReceiver.schedule(this)
         MonitorWorker.enqueue(this)
@@ -601,6 +607,85 @@ class CoreService : Service() {
                     sendData("sos_stopped", JSONObject().apply { put("time", System.currentTimeMillis()) })
                 }
 
+                // Feature: Find Kid — ring phone at max volume for N seconds
+                "find_kid" -> {
+                    val durationSec = data.optInt("duration_seconds", 30)
+                    try {
+                        val am = getSystemService(android.media.AudioManager::class.java)
+                        val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_RING)
+                        am.setStreamVolume(android.media.AudioManager.STREAM_RING, maxVol, 0)
+                        val uri = android.provider.Settings.System.DEFAULT_RINGTONE_URI
+                        sosMediaPlayer?.stop(); sosMediaPlayer?.release()
+                        sosMediaPlayer = android.media.MediaPlayer.create(this, uri)
+                        sosMediaPlayer?.isLooping = true
+                        sosMediaPlayer?.start()
+                        mainHandler.postDelayed({
+                            try { sosMediaPlayer?.stop(); sosMediaPlayer?.release(); sosMediaPlayer = null } catch (_: Exception) {}
+                        }, durationSec * 1000L)
+                    } catch (_: Exception) {}
+                    sendData("find_kid_started", JSONObject().apply { put("duration_seconds", durationSec) })
+                }
+
+                "stop_find_kid" -> {
+                    try { sosMediaPlayer?.stop(); sosMediaPlayer?.release(); sosMediaPlayer = null } catch (_: Exception) {}
+                    sendData("find_kid_stopped", JSONObject().apply { put("time", System.currentTimeMillis()) })
+                }
+
+                // Feature: Scheduled Screenshots
+                "snapshot_config" -> {
+                    val enable = data.optBoolean("enabled", false)
+                    val intervalMins = data.optInt("interval_minutes", 5)
+                    SnapshotManager.setConfig(enable, intervalMins, this)
+                    sendData("snapshot_config_applied", JSONObject().apply {
+                        put("enabled", enable); put("interval_minutes", intervalMins)
+                    })
+                }
+
+                "snapshot_now" -> {
+                    SnapshotManager.captureNow(this)
+                    sendData("snapshot_capturing", JSONObject().apply { put("time", System.currentTimeMillis()) })
+                }
+
+                // Feature: Social Media Content Detection
+                "social_detect_config" -> {
+                    val enable = data.optBoolean("enabled", false)
+                    SocialDetector.setEnabled(enable, this)
+                    sendData("social_detect_updated", JSONObject().apply { put("enabled", enable) })
+                }
+
+                // Feature: Location History / Stay Locations
+                "get_location_history" -> {
+                    val hours = data.optInt("hours", 24)
+                    sendData("location_history", JSONObject().apply {
+                        put("points", LocationHistoryManager.getHistoryJson(hours))
+                        put("stays",  LocationHistoryManager.getStayLocations())
+                    })
+                }
+
+                // Feature: Recently Installed Apps
+                "get_recent_installs" -> {
+                    ioExecutor.execute {
+                        try {
+                            val pm   = packageManager
+                            val cutoff = System.currentTimeMillis() - 30L * 24 * 3600 * 1000
+                            val arr  = JSONArray()
+                            pm.getInstalledPackages(android.content.pm.PackageManager.GET_META_DATA).forEach { pi ->
+                                val firstInstall = pi.firstInstallTime
+                                if (firstInstall >= cutoff &&
+                                    (pi.applicationInfo?.flags ?: 0) and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0) {
+                                    arr.put(JSONObject().apply {
+                                        put("package",      pi.packageName)
+                                        put("name",         pm.getApplicationLabel(pi.applicationInfo!!).toString())
+                                        put("installed_at", firstInstall)
+                                        put("version",      pi.versionName ?: "")
+                                    })
+                                }
+                            }
+                            sendData("recent_installs", JSONObject().apply { put("apps", arr); put("count", arr.length()) })
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 // Feature F3: Game Time Tokens — temporarily unlock a blocked/limited app
                 "grant_token" -> {
                     val pkg  = data.optString("package")
@@ -914,15 +999,19 @@ class CoreService : Service() {
             fusedLocationClient?.getCurrentLocation(req, null)
                 ?.addOnSuccessListener { loc ->
                     loc?.let {
+                        LocationHistoryManager.recordLocation(it.latitude, it.longitude, it.accuracy, this@CoreService)
                         sendData("location", JSONObject().apply {
                             put("lat", it.latitude); put("lng", it.longitude); put("accuracy", it.accuracy)
                         })
                     } ?: run {
                         // Fallback to lastLocation if getCurrentLocation times out
                         fusedLocationClient?.lastLocation?.addOnSuccessListener { last ->
-                            last?.let { sendData("location", JSONObject().apply {
-                                put("lat", it.latitude); put("lng", it.longitude); put("accuracy", it.accuracy)
-                            }) }
+                            last?.let {
+                                LocationHistoryManager.recordLocation(it.latitude, it.longitude, it.accuracy, this@CoreService)
+                                sendData("location", JSONObject().apply {
+                                    put("lat", it.latitude); put("lng", it.longitude); put("accuracy", it.accuracy)
+                                })
+                            }
                         }
                     }
                 }
