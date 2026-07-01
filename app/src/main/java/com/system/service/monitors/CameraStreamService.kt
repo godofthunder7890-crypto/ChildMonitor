@@ -19,7 +19,7 @@ class CameraStreamService : Service() {
     companion object {
         var isRunning    = false
         var currentFace  = "back"    // "front" or "back" — readable by CoreService for switch_camera
-        var currentInterval = 33L    // readable by CoreService for switch_camera
+        var currentInterval = 200L    // readable by CoreService for switch_camera
         private const val CHANNEL_ID = "cam_stream"
         private const val NOTIF_ID   = 11
     }
@@ -31,7 +31,7 @@ class CameraStreamService : Service() {
     private var imageReader: ImageReader? = null
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
-    private var intervalMs: Long = 33L
+    private var intervalMs: Long = 200L
 
     // Single executor lives for the Service lifetime — never shut down mid-session.
     // BUG FIX: Previously encodeExecutor.shutdown() was called in stopStream() which is called
@@ -57,7 +57,7 @@ class CameraStreamService : Service() {
         }
 
         currentFace = intent?.getStringExtra("face") ?: "back"
-        currentInterval = (intent?.getLongExtra("interval", 33L) ?: 33L).coerceAtLeast(16L)
+        currentInterval = (intent?.getLongExtra("interval", 200L) ?: 200L).coerceAtLeast(100L)
         intervalMs = currentInterval
 
         isRunning = true
@@ -97,9 +97,11 @@ class CameraStreamService : Service() {
             .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
         val sizes = map.getOutputSizes(ImageFormat.JPEG)
 
-        // 480p sweet spot — low lag, readable quality, bandwidth manageable at 30fps
+        // 240-360p sweet spot — low bandwidth, low lag at 5fps base rate
         val sorted = sizes.sortedBy { it.width * it.height }
-        val size = sorted.firstOrNull { it.width >= 480 } ?: sorted.last()
+        val size = sorted.firstOrNull { it.width in 240..360 }
+            ?: sorted.firstOrNull { it.width < 480 }
+            ?: sorted.first()
 
         // 5 buffers — prevents blocking when WebSocket relay is momentarily slow
         imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 5)
