@@ -17,7 +17,25 @@
             android:textColor="#00E5FF"
             android:textSize="18sp"
             android:fontFamily="sans-serif-medium"
+            android:layout_marginBottom="12dp"/>
+
+        <!-- Permission Health Score -->
+        <com.system.service.core.ScoreCircleView
+            android:id="@+id/scoreCircle"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_gravity="center_horizontal"
             android:layout_marginBottom="4dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PERMISSION HEALTH"
+            android:textColor="#00E5FF"
+            android:textSize="10sp"
+            android:letterSpacing="0.15"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="20dp"/>
 
         <TextView
             android:id="@+id/tvConnStatus"
